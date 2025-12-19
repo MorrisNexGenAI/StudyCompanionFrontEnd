@@ -3,17 +3,17 @@ import { createTheme } from '@mui/material/styles';
 export const theme = createTheme({
   palette: {
     primary: {
-      main: '#4F46E5', // Indigo-600
+      main: '#667eea', // Purple-blue gradient start
       light: '#818CF8',
-      dark: '#3730A3',
+      dark: '#5568d3',
     },
     secondary: {
-      main: '#10B981', // Green-600
-      light: '#34D399',
-      dark: '#059669',
+      main: '#764ba2', // Purple gradient end
+      light: '#9061c2',
+      dark: '#5d3a82',
     },
     background: {
-      default: '#F9FAFB',
+      default: 'transparent', // Let body gradient show through
       paper: '#FFFFFF',
     },
     success: {
@@ -51,15 +51,17 @@ export const theme = createTheme({
           textTransform: 'none',
           fontWeight: 600,
           padding: '10px 20px',
+          borderRadius: 12,
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+          borderRadius: 16,
           '&:hover': {
-            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+            boxShadow: '0 12px 24px rgba(102, 126, 234, 0.3)',
           },
         },
       },
@@ -68,6 +70,14 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           fontWeight: 600,
+          borderRadius: 8,
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
         },
       },
     },
