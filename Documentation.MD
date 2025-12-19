@@ -1,5 +1,5 @@
 # Phase 1: Django Backend Migration
-
+VITE_API_URL = https://your-django-backend.onrender.com
 ## Overview
 Migrated from single `subject` CharField to many-to-many `departments` relationship to support courses with multiple departments.
 

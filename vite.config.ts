@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
-        name: 'Cafphy Study Summary',
-        short_name: 'Cafphy',
+        name: 'Study Companion',
+        short_name: 'Study Companion',
         description: 'Offline-first study notes and summaries',
         theme_color: '#4F46E5',
         background_color: '#ffffff',
