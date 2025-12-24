@@ -59,7 +59,7 @@ class Department(BaseModel):
 **1. List Departments**
 ```python
 GET /api/departments/
-Response: [{"id": 1, "name": "Health Science"}, ...]
+Response: [{"id": 1, "name": "Health Science" }, ...]
 ```
 
 **2. Courses by Department**
