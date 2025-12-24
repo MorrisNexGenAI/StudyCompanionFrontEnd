@@ -99,7 +99,7 @@ export const Settings = () => {
             <Info sx={{ mr: 2, color: 'text.secondary' }} />
             <ListItemText
               primary="About"
-              secondary="Cafphy Study Summary v1.0.0"
+              secondary="Study Companion v1.0.0"
             />
           </ListItem>
         </List>

@@ -98,7 +98,7 @@ npm run dev
 2. **Upload Photos** → Select textbook images
 3. **OCR Extraction** → Wait for text extraction
 4. **Save Topic** → Choose course + topic title
-5. **Refine Summary** → Copy text → Paste in ChatGPT → Copy result back
+5. **Refine Summary** → Choose AI Model → Refine → Save Result
 6. **View Summary** → Read, print, or export
 
 ### For Students (PWA Mobile App)
@@ -307,26 +307,12 @@ whitenoise==6.5.0
 
 ### Backend (Django)
 
-**Option 1: Railway**
+**Option 1: Render**
 ```bash
-railway login
-railway init
-railway up
+render login
+setup project
+push from github
 ```
-
-**Option 2: Heroku**
-```bash
-heroku create cafphy-backend
-git push heroku main
-heroku run python manage.py migrate
-```
-
-**Option 3: PythonAnywhere**
-- Upload code via FTP
-- Set up virtual environment
-- Configure WSGI
-
----
 
 ### Frontend (PWA)
 
@@ -455,7 +441,7 @@ This project is for educational purposes.
 
 - **Backend** - Django + Python
 - **Frontend** - React + TypeScript
-- **OCR** - Google Cloud Vision API (via Colab)
+- **OCR** - EasyOCR (via Colab)
 
 ---
 
