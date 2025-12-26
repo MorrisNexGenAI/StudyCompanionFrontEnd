@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { dbHelpers } from '../db/schema';
 
-// Base URL - change this to your Django backend URL
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const apiClient = axios.create({
@@ -11,10 +11,17 @@ export const apiClient = axios.create({
   },
 });
 
-// Request interceptor (for adding auth tokens later if needed)
+// Request interceptor - ADD PREMIUM USER ID TO HEADERS
 apiClient.interceptors.request.use(
-  (config) => {
-    // You can add auth tokens here if needed in the future
+  async (config) => {
+    // Get premium profile from IndexedDB
+    const profile = await dbHelpers.getPremiumProfile();
+    
+    if (profile) {
+      // Add user_id to headers for premium access filtering
+      config.headers['X-User-ID'] = profile.user_id.toString();
+    }
+    
     return config;
   },
   (error) => {
@@ -27,13 +34,10 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      // Server responded with error status
       console.error('API Error:', error.response.status, error.response.data);
     } else if (error.request) {
-      // Request made but no response
       console.error('Network Error:', error.message);
     } else {
-      // Something else happened
       console.error('Error:', error.message);
     }
     return Promise.reject(error);

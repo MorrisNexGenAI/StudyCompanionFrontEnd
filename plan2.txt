@@ -1,0 +1,811 @@
+# ============================================
+# FILE: premium_users/views.py
+# ============================================
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Q
+from .models import PremiumUser
+from scan.models import Topic
+
+
+# ============= TEMPLATE VIEWS (Django Admin UI) =============
+
+def manage_premium_users(request):
+    """
+    Main page to view/edit/delete premium users.
+    Matches your library.html style.
+    """
+    # Get filter parameters
+    search = request.GET.get('search', '')
+    status_filter = request.GET.get('status', 'all')  # 'all', 'active', 'inactive'
+    
+    # Base query
+    users = PremiumUser.objects.all()
+    
+    # Apply search
+    if search:
+        users = users.filter(
+            Q(name__icontains=search) | Q(code__icontains=search)
+        )
+    
+    # Apply status filter
+    if status_filter == 'active':
+        users = users.filter(is_active=True)
+    elif status_filter == 'inactive':
+        users = users.filter(is_active=False)
+    
+    # Order by most recent
+    users = users.order_by('-created_at')
+    
+    # Get counts for badges
+    total_count = PremiumUser.objects.count()
+    active_count = PremiumUser.objects.filter(is_active=True).count()
+    inactive_count = PremiumUser.objects.filter(is_active=False).count()
+    
+    return render(request, 'premium_users/manage_users.html', {
+        'users': users,
+        'search': search,
+        'status_filter': status_filter,
+        'total_count': total_count,
+        'active_count': active_count,
+        'inactive_count': inactive_count,
+    })
+
+
+def edit_premium_user(request, user_id):
+    """Edit existing premium user"""
+    user = get_object_or_404(PremiumUser, id=user_id)
+    
+    if request.method == 'POST':
+        user.name = request.POST.get('name')
+        user.code = request.POST.get('code').upper()  # Force uppercase
+        user.save()
+        return redirect('premium_users:manage_users')
+    
+    return render(request, 'premium_users/edit_user.html', {
+        'user': user
+    })
+
+
+@csrf_exempt
+def toggle_user_status(request, user_id):
+    """Toggle active/inactive status (soft delete)"""
+    if request.method == 'POST':
+        user = get_object_or_404(PremiumUser, id=user_id)
+        user.is_active = not user.is_active
+        user.save()
+        return redirect('premium_users:manage_users')
+    return redirect('premium_users:manage_users')
+
+
+@csrf_exempt
+def delete_premium_user(request, user_id):
+    """Permanently delete user (use with caution)"""
+    if request.method == 'POST':
+        user = get_object_or_404(PremiumUser, id=user_id)
+        user.delete()
+        return redirect('premium_users:manage_users')
+    return redirect('premium_users:manage_users')
+
+
+# ============= API ENDPOINTS (For React Frontend) =============
+
+@csrf_exempt
+def register_or_login(request):
+    """
+    POST /api/premium/register-or-login/
+    
+    Register new user or retrieve existing user.
+    Used by React frontend during setup/recovery.
+    
+    Body: {name: "Emmanuel Cooper", code: "EC21"}
+    Returns: {user_id, name, code, is_new}
+    """
+    if request.method == 'POST':
+        try:
+            import json
+            data = json.loads(request.body)
+            name = data.get('name', '').strip()
+            code = data.get('code', '').strip().upper()
+            
+            # Validate
+            if not name or not code:
+                return JsonResponse({
+                    'error': 'Name and code are required'
+                }, status=400)
+            
+            if len(code) != 4:
+                return JsonResponse({
+                    'error': 'Code must be exactly 4 characters'
+                }, status=400)
+            
+            if not code.isalnum():
+                return JsonResponse({
+                    'error': 'Code must be alphanumeric (A-Z, 0-9)'
+                }, status=400)
+            
+            # Check if user exists
+            user, created = PremiumUser.objects.get_or_create(
+                name=name,
+                code=code,
+                defaults={'is_active': True}
+            )
+            
+            # Check if user is active
+            if not user.is_active:
+                return JsonResponse({
+                    'error': 'Account is inactive. Contact admin.'
+                }, status=403)
+            
+            return JsonResponse({
+                'user_id': user.id,
+                'name': user.name,
+                'code': user.code,
+                'is_new': created,
+                'message': 'Account created!' if created else 'Welcome back!'
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'error': str(e)
+            }, status=500)
+    
+    return JsonResponse({'error': 'POST required'}, status=405)
+
+
+def get_accessible_topics(request, user_id):
+    """
+    GET /api/premium/users/<user_id>/topics/
+    
+    Get all topics accessible to this user (community + assigned premium).
+    Used by React frontend to filter topic lists.
+    """
+    user = get_object_or_404(PremiumUser, id=user_id, is_active=True)
+    
+    # Get community topics
+    community_topics = Topic.objects.filter(is_premium=False)
+    
+    # Get premium topics assigned to this user
+    premium_topics = user.accessible_topics.filter(is_premium=True)
+    
+    # Combine (use union for efficiency)
+    all_topics = community_topics.union(premium_topics).order_by('-created_at')
+    
+    # Serialize
+    data = []
+    for topic in all_topics:
+        data.append({
+            'id': topic.id,
+            'title': topic.title,
+            'is_premium': topic.is_premium,
+            'course_id': topic.course.id,
+            'course_name': topic.course.name,
+        })
+    
+    return JsonResponse({
+        'user': {
+            'id': user.id,
+            'name': user.name,
+            'code': user.code
+        },
+        'topics': data
+    })
+
+
+# ============= HELPER FUNCTIONS (Called from scan/views.py) =============
+
+def filter_topics_for_user(topics_queryset, user_id=None):
+    """
+    Filter topics based on user access.
+    
+    Called from scan/views.py API endpoints.
+    
+    Args:
+        topics_queryset: QuerySet of Topic objects
+        user_id: Premium user ID (None = show only community)
+    
+    Returns:
+        Filtered QuerySet
+    """
+    if not user_id:
+        # No user_id = only show community topics
+        return topics_queryset.filter(is_premium=False)
+    
+    try:
+        user = PremiumUser.objects.get(id=user_id, is_active=True)
+        # Show community + assigned premium topics
+        return topics_queryset.filter(
+            Q(is_premium=False) |  # Community topics
+            Q(is_premium=True, premium_users=user)  # Premium topics for this user
+        ).distinct()
+    except PremiumUser.DoesNotExist:
+        # Invalid user = only community topics
+        return topics_queryset.filter(is_premium=False)
+
+
+def check_topic_access(topic, user_id=None):
+    """
+    Check if user can access a specific topic.
+    
+    Called from scan/views.py topic_detail endpoint.
+    
+    Args:
+        topic: Topic instance
+        user_id: Premium user ID (None = community only)
+    
+    Returns:
+        bool: True if accessible, False otherwise
+    """
+    if not topic.is_premium:
+        return True  # Community topics are always accessible
+    
+    if not user_id:
+        return False  # Premium topic requires user_id
+    
+    try:
+        user = PremiumUser.objects.get(id=user_id, is_active=True)
+        return topic.is_accessible_by(user)
+    except PremiumUser.DoesNotExist:
+        return False
+
+
+def get_active_premium_users_for_select():
+    """
+    Get list of active premium users for admin topic assignment.
+    
+    Called from scan/views.py when creating/editing premium topics.
+    
+    Returns:
+        QuerySet of active PremiumUser objects
+    """
+    return PremiumUser.objects.filter(is_active=True).order_by('name')
+
+
+# ============================================
+# FILE: premium_users/urls.py
+# ============================================
+from django.urls import path
+from . import views
+
+app_name = 'premium_users'
+
+urlpatterns = [
+    # ============= DJANGO TEMPLATE VIEWS (Admin UI) =============
+    path('manage/', views.manage_premium_users, name='manage_users'),
+    path('edit/<int:user_id>/', views.edit_premium_user, name='edit_user'),
+    path('toggle/<int:user_id>/', views.toggle_user_status, name='toggle_status'),
+    path('delete/<int:user_id>/', views.delete_premium_user, name='delete_user'),
+    
+    # ============= API ENDPOINTS (React Frontend) =============
+    path('api/register-or-login/', views.register_or_login, name='api_register'),
+    path('api/users/<int:user_id>/topics/', views.get_accessible_topics, name='api_user_topics'),
+]
+
+
+# ============================================
+# FILE: scan/views.py (MODIFICATIONS ONLY - ADD TO EXISTING FILE)
+# ============================================
+# ADD THIS IMPORT AT THE TOP (after your existing imports):
+from premium_users.views import (
+    filter_topics_for_user, 
+    check_topic_access,
+    get_active_premium_users_for_select
+)
+
+# THEN REPLACE THESE 3 FUNCTIONS (keep all other functions as is):
+
+def api_course_topics(request, course_id):
+    """
+    GET /api/courses/<int:course_id>/topics/ 
+    
+    List topics metadata (no full text)
+    NOW WITH PREMIUM FILTERING
+    """
+    course = get_object_or_404(Course, id=course_id)
+    
+    # Get user_id from request (query param or header)
+    user_id = request.GET.get('user_id') or request.headers.get('X-User-ID')
+    
+    # Get all topics for this course
+    topics = course.topics.all()
+    
+    # FILTER BASED ON USER ACCESS
+    topics = filter_topics_for_user(topics, user_id)
+    
+    data = []
+    for topic in topics:
+        data.append({
+            'id': topic.id,
+            'title': topic.title,
+            'page_range': topic.page_range,
+            'updated_at': int(topic.updated_at.timestamp()),
+            'is_refined': topic.is_refined(),
+            'is_premium': topic.is_premium,  # NEW FIELD
+        })
+    
+    return JsonResponse(data, safe=False)
+
+
+def api_topic_detail(request, topic_id):
+    """
+    GET /api/topics/<int:topic_id>/ 
+    
+    Get full topic with refined summary
+    NOW WITH ACCESS CONTROL
+    """
+    topic = get_object_or_404(
+        Topic.objects.select_related('course').prefetch_related('course__departments'), 
+        id=topic_id
+    )
+    
+    # Get user_id from request
+    user_id = request.GET.get('user_id') or request.headers.get('X-User-ID')
+    
+    # CHECK ACCESS PERMISSION
+    if not check_topic_access(topic, user_id):
+        return JsonResponse({
+            'error': 'Access denied. This is a premium topic.',
+            'is_premium': True,
+            'requires_login': True
+        }, status=403)
+    
+    data = {
+        'id': topic.id,
+        'title': topic.title,
+        'page_range': topic.page_range,
+        'refined_summary': topic.refined_summary,
+        'raw_text': topic.raw_text,
+        'course_name': topic.course.name,
+        'course_year': topic.course.year,
+        'departments': [d.name for d in topic.course.departments.all()],
+        'updated_at': int(topic.updated_at.timestamp()),
+        'created_at': int(topic.created_at.timestamp()),
+        'is_premium': topic.is_premium,  # NEW FIELD
+    }
+    
+    return JsonResponse(data)
+
+
+def api_department_courses(request, dept_id):
+    """
+    GET /api/departments/<int:dept_id>/courses/
+    
+    List courses in department
+    NOW SHOWS ACCESSIBLE TOPIC COUNTS
+    """
+    department = get_object_or_404(Department, id=dept_id)
+    courses = department.courses.prefetch_related('departments').all()
+    
+    # Get user_id for filtering
+    user_id = request.GET.get('user_id') or request.headers.get('X-User-ID')
+    
+    data = []
+    for course in courses:
+        # Filter topics based on user access
+        all_topics = course.topics.all()
+        accessible_topics = filter_topics_for_user(all_topics, user_id)
+        
+        data.append({
+            'id': course.id,
+            'name': course.name,
+            'year': course.year,
+            'departments': [{'id': d.id, 'name': d.name} for d in course.departments.all()],
+            'topic_count': accessible_topics.count(),  # FILTERED COUNT
+            'refined_count': accessible_topics.filter(refined_summary__isnull=False).exclude(refined_summary='').count(),
+        })
+    
+    return JsonResponse(data, safe=False)
+
+
+# ============================================
+# FILE: scan/models.py (ADD TO EXISTING Topic MODEL)
+# ============================================
+# ADD THESE FIELDS AND METHODS TO YOUR EXISTING Topic MODEL:
+
+    # NEW PREMIUM FIELDS (add after your existing fields)
+    is_premium = models.BooleanField(
+        default=False,
+        help_text="If True, only selected premium users can access this topic"
+    )
+    
+    premium_users = models.ManyToManyField(
+        'premium_users.PremiumUser',
+        blank=True,
+        related_name='accessible_topics',
+        limit_choices_to={'is_active': True},
+        help_text="Select users who can access this premium topic"
+    )
+    
+    # UPDATE Meta class to add this index:
+    class Meta:
+        # ... your existing Meta fields ...
+        indexes = [
+            # ... your existing indexes ...
+            models.Index(fields=['is_premium']),  # ADD THIS LINE
+        ]
+    
+    # ADD THESE NEW METHODS:
+    def is_accessible_by(self, user):
+        """
+        Check if a user can access this topic.
+        
+        Args:
+            user: PremiumUser instance or user_id (int)
+        
+        Returns:
+            bool: True if accessible, False otherwise
+        """
+        # Community topics are always accessible
+        if not self.is_premium:
+            return True
+        
+        # Premium topics require user to be in premium_users AND active
+        if isinstance(user, int):
+            # If user_id passed, check by ID
+            return self.premium_users.filter(id=user, is_active=True).exists()
+        else:
+            # If PremiumUser instance passed
+            return self.premium_users.filter(id=user.id, is_active=True).exists()
+    
+    def add_premium_user(self, user):
+        """Add a user to this premium topic."""
+        if not self.is_premium:
+            raise ValueError("Cannot add users to community topics")
+        self.premium_users.add(user)
+    
+    def remove_premium_user(self, user):
+        """Remove a user from this premium topic."""
+        self.premium_users.remove(user)
+    
+    def get_accessible_user_count(self):
+        """Count how many active users can access this topic."""
+        if not self.is_premium:
+            return "All users"  # Community topic
+        return self.premium_users.filter(is_active=True).count()
+    
+    # UPDATE __str__ method to show premium badge:
+    def __str__(self):
+        premium_badge = "🔒" if self.is_premium else ""
+        return f"{premium_badge}{self.title} ({self.course.name})"
+
+
+# ============================================
+# FILE: premium_users/templates/premium_users/manage_users.html
+# ============================================
+{% extends "scan/partials/base.html" %}
+
+{% block content %}
+<div class="bg-white rounded-2xl shadow-xl p-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-3xl font-bold text-indigo-600">👥 Manage Premium Users</h1>
+        <a href="{% url 'home' %}" class="text-gray-600 hover:text-gray-800">← Back to Home</a>
+    </div>
+    
+    <!-- Stats Cards -->
+    <div class="grid md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-4">
+            <p class="text-sm text-blue-600 font-semibold">Total Users</p>
+            <p class="text-3xl font-bold text-blue-800">{{ total_count }}</p>
+        </div>
+        <div class="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-4">
+            <p class="text-sm text-green-600 font-semibold">Active Users</p>
+            <p class="text-3xl font-bold text-green-800">{{ active_count }}</p>
+        </div>
+        <div class="bg-gradient-to-br from-red-50 to-rose-50 border-2 border-red-200 rounded-xl p-4">
+            <p class="text-sm text-red-600 font-semibold">Inactive Users</p>
+            <p class="text-3xl font-bold text-red-800">{{ inactive_count }}</p>
+        </div>
+    </div>
+    
+    <!-- Search & Filter Bar -->
+    <div class="bg-gray-50 rounded-xl p-4 mb-6">
+        <form method="GET" class="grid md:grid-cols-3 gap-4">
+            <!-- Search Input -->
+            <div class="md:col-span-2">
+                <input type="text" 
+                       name="search" 
+                       value="{{ search }}" 
+                       placeholder="🔍 Search by name or code..."
+                       class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none">
+            </div>
+            
+            <!-- Status Filter -->
+            <div class="flex gap-2">
+                <select name="status" 
+                        class="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none">
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>✓ Active</option>
+                    <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>✗ Inactive</option>
+                </select>
+                
+                <button type="submit" 
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2 rounded-lg transition">
+                    Filter
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Create New User Button -->
+    <div class="mb-6">
+        <a href="{% url 'admin:premium_users_premiumuser_add' %}" 
+           class="inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition">
+            ➕ Create New Premium User
+        </a>
+    </div>
+    
+    <!-- Users List -->
+    {% if users %}
+    <div class="overflow-x-auto">
+        <table class="w-full">
+            <thead class="bg-gray-100 border-b-2 border-gray-300">
+                <tr>
+                    <th class="text-left py-3 px-4 font-bold text-gray-700">Name</th>
+                    <th class="text-left py-3 px-4 font-bold text-gray-700">Code</th>
+                    <th class="text-center py-3 px-4 font-bold text-gray-700">Status</th>
+                    <th class="text-center py-3 px-4 font-bold text-gray-700">Topics Access</th>
+                    <th class="text-center py-3 px-4 font-bold text-gray-700">Joined Date</th>
+                    <th class="text-center py-3 px-4 font-bold text-gray-700">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr class="border-b border-gray-200 hover:bg-gray-50">
+                    <!-- Name -->
+                    <td class="py-3 px-4">
+                        <p class="font-semibold text-gray-800">{{ user.name }}</p>
+                    </td>
+                    
+                    <!-- Code -->
+                    <td class="py-3 px-4">
+                        <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full font-mono font-bold">
+                            {{ user.code }}
+                        </span>
+                    </td>
+                    
+                    <!-- Status -->
+                    <td class="py-3 px-4 text-center">
+                        {% if user.is_active %}
+                        <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold">
+                            ✓ Active
+                        </span>
+                        {% else %}
+                        <span class="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-semibold">
+                            ✗ Inactive
+                        </span>
+                        {% endif %}
+                    </td>
+                    
+                    <!-- Topics Count -->
+                    <td class="py-3 px-4 text-center">
+                        <span class="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-semibold">
+                            {{ user.accessible_topics.count }} topics
+                        </span>
+                    </td>
+                    
+                    <!-- Joined Date -->
+                    <td class="py-3 px-4 text-center text-gray-600 text-sm">
+                        {{ user.created_at|date:"M d, Y" }}
+                    </td>
+                    
+                    <!-- Actions -->
+                    <td class="py-3 px-4 text-center">
+                        <div class="flex gap-2 justify-center">
+                            <!-- Edit Button -->
+                            <a href="{% url 'premium_users:edit_user' user.id %}" 
+                               class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold transition">
+                                ✏️ Edit
+                            </a>
+                            
+                            <!-- Toggle Status Button -->
+                            <form method="POST" action="{% url 'premium_users:toggle_status' user.id %}" class="inline">
+                                {% csrf_token %}
+                                {% if user.is_active %}
+                                <button type="submit" 
+                                        class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm font-semibold transition">
+                                    🔒 Deactivate
+                                </button>
+                                {% else %}
+                                <button type="submit" 
+                                        class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition">
+                                    ✓ Activate
+                                </button>
+                                {% endif %}
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="bg-gray-50 border-2 border-gray-200 rounded-xl p-8 text-center">
+        <p class="text-xl text-gray-600 mb-4">No premium users found!</p>
+        
+        {% if search or status_filter != 'all' %}
+        <p class="text-gray-500 mb-6">Try adjusting your search or filters.</p>
+        <a href="{% url 'premium_users:manage_users' %}" 
+           class="inline-block bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg transition">
+            Clear Filters
+        </a>
+        {% else %}
+        <p class="text-gray-500 mb-6">Create your first premium user to get started.</p>
+        <a href="{% url 'admin:premium_users_premiumuser_add' %}" 
+           class="inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition">
+            ➕ Create First User
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Info Banner -->
+    <div class="bg-blue-50 border-2 border-blue-300 rounded-xl p-6 mt-6">
+        <h3 class="font-bold text-blue-800 mb-3">ℹ️ About Premium Users:</h3>
+        <div class="space-y-2 text-sm text-blue-900">
+            <p><strong>Active Users:</strong> Can access premium topics assigned to them</p>
+            <p><strong>Inactive Users:</strong> Cannot access any premium content (soft-deleted)</p>
+            <p><strong>Code Format:</strong> Exactly 4 characters (A-Z, 0-9), automatically uppercase</p>
+            <p><strong>Unique Identity:</strong> Each name + code combination must be unique</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+# ============================================
+# FILE: premium_users/templates/premium_users/edit_user.html
+# ============================================
+{% extends "scan/partials/base.html" %}
+
+{% block content %}
+<div class="bg-white rounded-2xl shadow-xl p-8 max-w-2xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-indigo-600">✏️ Edit Premium User</h1>
+        <a href="{% url 'premium_users:manage_users' %}" class="text-gray-600 hover:text-gray-800">← Back to List</a>
+    </div>
+    
+    <!-- Edit Form -->
+    <form method="POST" class="space-y-6">
+        {% csrf_token %}
+        
+        <!-- Name Field -->
+        <div>
+            <label class="block text-gray-700 font-bold mb-2">Full Name</label>
+            <input type="text" 
+                   name="name" 
+                   value="{{ user.name }}" 
+                   required
+                   maxlength="100"
+                   class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
+                   placeholder="e.g., Emmanuel Cooper">
+            <p class="text-sm text-gray-500 mt-1">Maximum 100 characters</p>
+        </div>
+        
+        <!-- Code Field -->
+        <div>
+            <label class="block text-gray-700 font-bold mb-2">Personal Code</label>
+            <input type="text" 
+                   name="code" 
+                   value="{{ user.code }}" 
+                   required
+                   maxlength="4"
+                   pattern="[A-Za-z0-9]{4}"
+                   class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none font-mono text-lg uppercase"
+                   placeholder="e.g., EC21"
+                   style="text-transform: uppercase;">
+            <p class="text-sm text-gray-500 mt-1">Exactly 4 alphanumeric characters (A-Z, 0-9)</p>
+        </div>
+        
+        <!-- Current Status Display -->
+        <div class="bg-gray-50 border-2 border-gray-300 rounded-lg p-4">
+            <p class="text-gray-700 font-bold mb-2">Current Status:</p>
+            {% if user.is_active %}
+            <span class="bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-semibold">
+                ✓ Active
+            </span>
+            {% else %}
+            <span class="bg-red-100 text-red-800 px-4 py-2 rounded-full text-sm font-semibold">
+                ✗ Inactive
+            </span>
+            {% endif %}
+            <p class="text-sm text-gray-500 mt-2">
+                To change status, use the Activate/Deactivate button on the manage users page.
+            </p>
+        </div>
+        
+        <!-- Topic Access Info -->
+        <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4">
+            <p class="text-purple-800 font-bold mb-2">📚 Current Topic Access:</p>
+            <p class="text-purple-900 text-lg">{{ user.accessible_topics.count }} premium topics</p>
+            <p class="text-sm text-purple-700 mt-2">
+                Topic assignments are managed when creating/editing premium topics.
+            </p>
+        </div>
+        
+        <!-- Metadata Display -->
+        <div class="bg-gray-50 border border-gray-300 rounded-lg p-4 text-sm text-gray-600">
+            <p><strong>User ID:</strong> {{ user.id }}</p>
+            <p><strong>Created:</strong> {{ user.created_at|date:"F d, Y g:i A" }}</p>
+            <p><strong>Last Updated:</strong> {{ user.updated_at|date:"F d, Y g:i A" }}</p>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="flex gap-3">
+            <button type="submit" 
+                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition">
+                💾 Save Changes
+            </button>
+            
+            <a href="{% url 'premium_users:manage_users' %}" 
+               class="flex-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                Cancel
+            </a>
+        </div>
+    </form>
+    
+    <!-- Warning Banner -->
+    <div class="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-4 mt-6">
+        <p class="text-yellow-800 font-bold mb-2">⚠️ Important Notes:</p>
+        <ul class="list-disc list-inside text-sm text-yellow-900 space-y-1">
+            <li>Changing the code will affect user login (they must use new code)</li>
+            <li>Name + Code combination must be unique</li>
+            <li>Code will be automatically converted to uppercase</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+// Auto-uppercase code input as user types
+document.querySelector('input[name="code"]').addEventListener('input', function(e) {
+    this.value = this.value.toUpperCase();
+});
+</script>
+{% endblock %}
+
+
+# ============================================
+# FILE: scan/templates/scan/partials/save_success.html (FIXED VERSION)
+# ============================================
+{% extends "scan/partials/base.html" %}
+
+{% block content %}
+<div class="bg-white rounded-2xl shadow-xl p-8">
+    <div class="bg-green-50 border-2 border-green-300 rounded-xl p-6">
+        <h2 class="text-2xl font-bold text-green-800 mb-4">✓ Topic Saved Successfully!</h2>
+        
+        <div class="bg-white rounded-lg p-4 mb-4">
+            <p class="text-gray-700 mb-2"><strong>Course:</strong> {{ course.name }}</p>
+            <p class="text-gray-700 mb-2"><strong>Topic:</strong> {{ topic.title }}</p>
+            {% if topic.page_range %}
+            <p class="text-gray-700"><strong>Pages:</strong> {{ topic.page_range }}</p>
+            {% endif %}
+        </div>
+        
+        <div class="space-y-3">
+            <a href="{% url 'topic_detail' topic.id %}" 
+               class="block w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                👁️ View Topic & Add Refined Summary
+            </a>
+            
+            <a href="{% url 'course_detail' course.id %}" 
+               class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                📚 View All Topics in {{ course.name }}
+            </a>
+            
+            <a href="{% url 'scan_new' %}" 
+               class="block w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                ➕ Scan More Pages
+            </a>
+            
+            <a href="{% url 'library' %}" 
+               class="block w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg text-center transition">
+                📖 Go to Library
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

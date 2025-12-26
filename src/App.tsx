@@ -8,6 +8,8 @@ import { TopicList } from './pages/TopicList';
 import { TopicReader } from './pages/TopicReader';
 import { Settings } from './pages/Settings';
 import { MyDownloads } from './pages/MyDownloads';
+import { PremiumSetup } from './pages/PremiumSetup'; // NEW
+import { PremiumGuard } from './components/PremiumGuard'; // NEW
 import { useStore } from './stores/useStore';
 
 const queryClient = new QueryClient({
@@ -15,7 +17,7 @@ const queryClient = new QueryClient({
     queries: {
       retry: 2,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
   },
 });
@@ -25,15 +27,58 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/" element={<DepartmentSelect />} />
+      {/* Premium Setup - First Page */}
+      <Route path="/setup" element={<PremiumSetup />} />
+      
+      {/* Main App Routes with Premium Guard */}
+      <Route
+        path="/"
+        element={
+          <PremiumGuard>
+            <DepartmentSelect />
+          </PremiumGuard>
+        }
+      />
       <Route
         path="/courses"
-        element={selectedDeptId ? <CourseList /> : <Navigate to="/" replace />}
+        element={
+          <PremiumGuard>
+            {selectedDeptId ? <CourseList /> : <Navigate to="/" replace />}
+          </PremiumGuard>
+        }
       />
-      <Route path="/courses/:courseId/topics" element={<TopicList />} />
-      <Route path="/topics/:topicId" element={<TopicReader />} />
-      <Route path="/downloads" element={<MyDownloads />} />
-      <Route path="/settings" element={<Settings />} />
+      <Route
+        path="/courses/:courseId/topics"
+        element={
+          <PremiumGuard>
+            <TopicList />
+          </PremiumGuard>
+        }
+      />
+      <Route
+        path="/topics/:topicId"
+        element={
+          <PremiumGuard>
+            <TopicReader />
+          </PremiumGuard>
+        }
+      />
+      <Route
+        path="/downloads"
+        element={
+          <PremiumGuard>
+            <MyDownloads />
+          </PremiumGuard>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <PremiumGuard>
+            <Settings />
+          </PremiumGuard>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

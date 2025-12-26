@@ -1,127 +1,140 @@
+
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
-import { useStore } from '../stores/useStore';
-import { db, dbHelpers } from '../db/schema';
-import { useNavigate } from 'react-router-dom';
+import { dbHelpers } from '../db/schema';
+import type { PremiumProfile } from '../types';
 import {
-  List,
-  ListItem,
-  ListItemText,
-  ListItemButton,
-  Paper,
+  Box,
+  Card,
+  CardContent,
   Typography,
   Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Divider,
   Alert,
 } from '@mui/material';
-import {
-  Apartment as DepartmentIcon,
-  Storage,
-  Info,
-  DeleteForever,
-} from '@mui/icons-material';
+import { Person, Logout } from '@mui/icons-material';
 
 export const Settings = () => {
-  const navigate = useNavigate();
-  const clearSelectedDepartment = useStore((state) => state.clearSelectedDepartment);
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const [storageSize, setStorageSize] = useState<string>('0 KB');
-  const [offlineCount, setOfflineCount] = useState(0);
+  const [profile, setProfile] = useState<PremiumProfile | null>(null);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   useEffect(() => {
-    loadStats();
+    loadProfile();
   }, []);
 
-  const loadStats = async () => {
-    const size = await dbHelpers.getStorageSize();
-    const sizeKB = (size / 1024).toFixed(2);
-    setStorageSize(`${sizeKB} KB`);
-
-    const count = await db.downloadedTopics.count();
-    setOfflineCount(count);
+  const loadProfile = async () => {
+    const p = await dbHelpers.getPremiumProfile();
+    setProfile(p || null);
   };
 
-  const handleChangeDepartment = () => {
-    clearSelectedDepartment();
-    navigate('/');
-  };
-
-  const handleClearAll = async () => {
-    await dbHelpers.clearAll();
-    setClearDialogOpen(false);
-    loadStats();
-    alert('All offline data cleared!');
+  const handleLogout = async () => {
+    await dbHelpers.clearPremiumProfile();
+    setLogoutDialogOpen(false);
+    window.location.href = '/setup'; // Force reload to setup page
   };
 
   return (
     <Layout title="Settings" showBack>
-      <Paper>
-        <List>
-          {/* Change Department */}
-          <ListItemButton onClick={handleChangeDepartment}>
-            <DepartmentIcon sx={{ mr: 2, color: 'primary.main' }} />
-            <ListItemText
-              primary="Change Department"
-              secondary="Select a different department"
-            />
-          </ListItemButton>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* Premium Account Section */}
+        <Card>
+          <CardContent>
+            <Box display="flex" alignItems="center" gap={2} mb={2}>
+              <Person color="primary" />
+              <Typography variant="h6" fontWeight={600}>
+                Premium Account
+              </Typography>
+            </Box>
 
-          <Divider />
+            {profile ? (
+              <>
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary" mb={1}>
+                    Name
+                  </Typography>
+                  <Typography variant="h6" fontWeight={600} mb={2}>
+                    {profile.name}
+                  </Typography>
 
-          {/* Storage Info - Now Clickable */}
-          <ListItemButton onClick={() => navigate('/downloads')}>
-            <Storage sx={{ mr: 2, color: 'primary.main' }} />
-            <ListItemText
-              primary="My Downloads"
-              secondary={`${offlineCount} topics • ${storageSize}`}
-            />
-          </ListItemButton>
+                  <Typography variant="body2" color="text.secondary" mb={1}>
+                    Personal Code
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    fontWeight={700}
+                    sx={{
+                      fontFamily: 'monospace',
+                      color: 'primary.main',
+                    }}
+                  >
+                    {profile.code}
+                  </Typography>
 
-          <Divider />
+                  <Typography variant="caption" color="text.secondary" mt={2} display="block">
+                    Registered: {new Date(profile.registered_at).toLocaleDateString()}
+                  </Typography>
+                </Box>
 
-          {/* Clear All Data */}
-          <ListItemButton onClick={() => setClearDialogOpen(true)}>
-            <DeleteForever sx={{ mr: 2, color: 'error.main' }} />
-            <ListItemText
-              primary="Clear All Offline Data"
-              secondary="Remove all downloaded topics"
-            />
-          </ListItemButton>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  startIcon={<Logout />}
+                  onClick={() => setLogoutDialogOpen(true)}
+                  sx={{
+                    borderRadius: 2,
+                    py: 1.5,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                  }}
+                >
+                  Log Out
+                </Button>
+              </>
+            ) : (
+              <Alert severity="info" sx={{ borderRadius: 2 }}>
+                You are browsing as a guest. Set up premium account to access exclusive content.
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
 
-          <Divider />
+        {/* Your other settings sections here */}
+      </Box>
 
-          {/* App Info */}
-          <ListItem>
-            <Info sx={{ mr: 2, color: 'text.secondary' }} />
-            <ListItemText
-              primary="About"
-              secondary="Study Companion v1.0.0"
-            />
-          </ListItem>
-        </List>
-      </Paper>
-
-      {/* Info Alert */}
-      <Alert severity="info" sx={{ mt: 3 }}>
-        This app works offline! Download topics to access them without internet.
-      </Alert>
-
-      {/* Clear All Dialog */}
-      <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)}>
-        <DialogTitle>Clear All Offline Data?</DialogTitle>
+      {/* Logout Confirmation Dialog */}
+      <Dialog
+        open={logoutDialogOpen}
+        onClose={() => setLogoutDialogOpen(false)}
+        PaperProps={{
+          sx: { borderRadius: 3, p: 1 },
+        }}
+      >
+        <DialogTitle fontWeight={600}>Log Out?</DialogTitle>
         <DialogContent>
           <Typography>
-            This will delete all downloaded topics and cached data. You'll need to re-download them.
+            You will need to re-enter your name and code to access premium content again.
           </Typography>
+          <Alert severity="warning" sx={{ mt: 2, borderRadius: 2 }}>
+            Downloaded topics will remain accessible offline.
+          </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setClearDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleClearAll} color="error" variant="contained">
-            Clear All
+          <Button onClick={() => setLogoutDialogOpen(false)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button onClick={handleLogout} color="error" variant="contained" sx={{ textTransform: 'none' }}>
+            Log Out
           </Button>
         </DialogActions>
       </Dialog>

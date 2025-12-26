@@ -14,28 +14,6 @@ export interface Course {
   refined_count: number;
 }
 
-// Topic (metadata only)
-export interface TopicMeta {
-  id: number;
-  title: string;
-  page_range: string;
-  updated_at: number; // Unix timestamp
-  is_refined: boolean;
-}
-
-// Topic (full with content)
-export interface TopicFull {
-  id: number;
-  title: string;
-  page_range: string;
-  refined_summary: string;
-  raw_text: string;
-  course_name: string;
-  course_year: string;
-  departments: string[];
-  updated_at: number;
-  created_at: number;
-}
 
 // Downloaded topic (stored locally)
 export interface DownloadedTopic {
@@ -54,6 +32,47 @@ export interface AppState {
   selectedDepartmentId: number | null;
   setSelectedDepartment: (id: number) => void;
   clearSelectedDepartment: () => void;
+}
+
+export interface PremiumProfile {
+  user_id: number;
+  name: string;
+  code: string;
+  registered_at: number; // Unix timestamp
+}
+
+// API Response for registration/login
+export interface PremiumAuthResponse {
+  user_id: number;
+  name: string;
+  code: string;
+  is_new: boolean;
+  message: string;
+}
+
+// Update TopicMeta to include is_premium
+export interface TopicMeta {
+  id: number;
+  title: string;
+  page_range: string;
+  updated_at: number;
+  is_refined: boolean;
+  is_premium: boolean; // ADD THIS
+}
+
+// Update TopicFull to include is_premium
+export interface TopicFull {
+  id: number;
+  title: string;
+  page_range: string;
+  refined_summary: string;
+  raw_text: string;
+  course_name: string;
+  course_year: string;
+  departments: string[];
+  updated_at: number;
+  created_at: number;
+  is_premium: boolean; // ADD THIS
 }
 
 // Sync status
