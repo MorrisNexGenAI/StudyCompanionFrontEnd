@@ -1,6 +1,6 @@
 # Study Companion PWA - Progressive Web App
 
-An offline-first mobile study notes application built with React, TypeScript, and Material-UI. Download topics once, access them anywhere without internet.
+An offline-first mobile study notes application with premium content management. Download topics once, access them anywhere without internet.
 
 ---
 
@@ -9,10 +9,18 @@ An offline-first mobile study notes application built with React, TypeScript, an
 ### Core Functionality
 - 📚 **Browse by Department** - Health Science, Criminal Justice, Business, etc.
 - 📖 **View Study Topics** - Access AI-refined summaries
+- 🔒 **Premium Content** - Secure access control for exclusive materials
 - ⬇️ **Download for Offline** - Save topics to device storage
 - ✈️ **Works Offline** - Full functionality without internet
 - 📤 **Share Notes** - Native share or copy to clipboard
 - 🗑️ **Manage Downloads** - View and delete saved topics
+
+### Premium Features (Phase 2)
+- 🎫 **User Registration** - Name + 4-character code authentication
+- 🔐 **Access Control** - Community topics (free) vs Premium topics (paid)
+- 👤 **Personal Profile** - View your name, code, and access level
+- 🎯 **Filtered Content** - See only topics assigned to you
+- 📊 **Usage Tracking** - Local analytics on downloaded topics
 
 ### Progressive Web App
 - 📲 **Installable** - Add to home screen (iOS/Android)
@@ -47,8 +55,9 @@ An offline-first mobile study notes application built with React, TypeScript, an
 │   IndexedDB     │  │   Backend API   │
 │  (Local Store)  │  │  (Django REST)  │
 │                 │  │                 │
-│  Downloaded     │  │  All Topics     │
-│  Topics         │  │  Live Data      │
+│  - Downloads    │  │  - All Topics   │
+│  - Premium      │  │  - Premium Auth │
+│    Profile      │  │  - Filtering    │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -100,7 +109,8 @@ npm run preview
 cafphy-pwa/
 ├── src/
 │   ├── api/                    # API client layer
-│   │   └── client.ts           # Axios instance
+│   │   ├── client.ts           # Axios instance with auth
+│   │   └── endpoints.ts        # API endpoint functions
 │   │
 │   ├── components/             # Reusable UI components
 │   │   ├── Layout.tsx          # App shell with nav
@@ -109,6 +119,7 @@ cafphy-pwa/
 │   │   └── EmptyState.tsx      # Empty list message
 │   │
 │   ├── pages/                  # Route pages
+│   │   ├── PremiumSetup.tsx    # NEW: Premium registration
 │   │   ├── DepartmentsPage.tsx # Department selection
 │   │   ├── CoursesPage.tsx     # Courses in dept
 │   │   ├── TopicsPage.tsx      # Topics in course
@@ -116,7 +127,7 @@ cafphy-pwa/
 │   │   └── DownloadsPage.tsx   # Offline downloads
 │   │
 │   ├── db/                     # IndexedDB layer
-│   │   └── schema.ts           # Dexie database
+│   │   └── schema.ts           # Dexie database + helpers
 │   │
 │   ├── hooks/                  # Custom React hooks
 │   │   ├── useDepartments.ts   # Fetch departments
@@ -144,6 +155,10 @@ cafphy-pwa/
 │       ├── icon-192x192.png
 │       └── icon-512x512.png
 │
+├── docs/                       # Documentation
+│   ├── PHASE1.md               # Phase 1: Offline-first PWA
+│   └── PHASE2.md               # Phase 2: Premium features
+│
 ├── vite.config.ts              # Vite + PWA config
 ├── tsconfig.json               # TypeScript config
 ├── package.json                # Dependencies
@@ -166,39 +181,6 @@ VITE_API_URL=http://localhost:8000
 # VITE_API_URL=https://api.cafphy.com
 ```
 
-### Vite Configuration
-
-```typescript
-// vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
-
-export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: {
-        name: 'Cafphy Study Notes',
-        short_name: 'Cafphy',
-        theme_color: '#1976d2',
-        icons: [...]
-      }
-    })
-  ],
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
-      }
-    }
-  }
-});
-```
-
 ---
 
 ## 🗄️ Data Storage
@@ -206,30 +188,31 @@ export default defineConfig({
 ### IndexedDB Schema
 
 ```typescript
+// Downloaded Topics
 interface DownloadedTopic {
-  id: number;              // Primary key
-  title: string;           // Topic title
-  content: string;         // Refined summary
-  courseName: string;      // Course name
-  departments: string[];   // Department names
-  pageRange: string;       // e.g., "Pages 1-5"
-  downloadedAt: number;    // Unix timestamp
-  updatedAt: number;       // Last updated timestamp
+  id: number;
+  title: string;
+  content: string;
+  courseName: string;
+  departments: string[];
+  pageRange: string;
+  downloadedAt: number;
+  updatedAt: number;
+}
+
+// Premium User Profile (NEW in Phase 2)
+interface PremiumProfile {
+  user_id: number;
+  name: string;
+  code: string;
+  registered_at: number;
 }
 ```
 
-**Database Name:** `CaffphyDB`
-**Store Name:** `topics`
-**Indexes:** `id`, `title`, `courseName`, `downloadedAt`
-
-### Storage Limits
-
-- **Chrome/Edge**: ~60% of disk space
-- **Firefox**: ~50% of disk space
-- **Safari**: ~1GB
-- **Typical topic**: 10-50KB
-
-**Estimate:** Can store 1000+ topics on most devices
+**Database Name:** `CaffphyDB`  
+**Stores:**
+- `topics` - Downloaded topics
+- `premiumProfile` - User authentication data
 
 ---
 
@@ -237,75 +220,73 @@ interface DownloadedTopic {
 
 ### Endpoints Used
 
+**Authentication (NEW)**
+```
+POST /premium/api/register-or-login/
+Body: { name: string, code: string }
+Response: { user_id, name, code, is_new }
+```
+
 **Departments**
-```typescript
+```
 GET /api/departments/
 Response: Department[]
 ```
 
 **Courses**
-```typescript
-GET /api/departments/{deptId}/courses/
+```
+GET /api/departments/{deptId}/courses/?user_id=X
 Response: Course[]
 ```
 
-**Topics**
-```typescript
-GET /api/courses/{courseId}/topics/
+**Topics (Filtered by User)**
+```
+GET /api/courses/{courseId}/topics/?user_id=X
 Response: TopicMetadata[]
 ```
 
-**Topic Detail**
-```typescript
-GET /api/topics/{topicId}/
-Response: TopicDetail (with content)
+**Topic Detail (Access Controlled)**
+```
+GET /api/topics/{topicId}/?user_id=X
+Response: TopicDetail | 403 Access Denied
 ```
 
-### Caching Strategy
+### Request Interceptor
 
-```
-Departments  → Cache 24 hours (rarely changes)
-Courses      → Cache 30 minutes
-Topics       → Cache 5 minutes
-Topic Detail → No cache (always fresh)
-```
+All API requests automatically include `user_id`:
+- As query parameter for GET requests
+- As `X-User-ID` header for all requests
 
 ---
 
-## 🎨 UI/UX Design
+## 🔐 Premium Access Flow
 
-### Theme
-
-```typescript
-// src/theme.ts
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',  // Blue
-    },
-    secondary: {
-      main: '#dc004e',  // Pink
-    },
-  },
-  typography: {
-    fontFamily: 'Roboto, sans-serif',
-    h1: { fontSize: '2rem' },
-    body1: { fontSize: '1rem' },
-  },
-});
+### Registration/Login
+```
+1. User opens app for first time
+2. Shows PremiumSetup page
+3. User enters name + 4-char code
+4. API validates credentials
+5. Save profile to IndexedDB
+6. Redirect to departments
 ```
 
-### Components
+### Content Filtering
+```
+1. User browses topics
+2. API request includes user_id
+3. Backend filters topics:
+   - Community topics (everyone)
+   - Premium topics (only if assigned)
+4. User sees only accessible content
+```
 
-**Material-UI Components Used:**
-- `AppBar` - Top navigation
-- `BottomNavigation` - Bottom nav
-- `Card` - List items
-- `Button` - Actions
-- `Chip` - Badges
-- `CircularProgress` - Loading
-- `Snackbar` - Toast notifications
-- `Dialog` - Confirmations
+### Skipping Registration
+```
+- User can click "Skip for now"
+- Gets access to community topics only
+- Can register later from settings
+```
 
 ---
 
@@ -324,91 +305,26 @@ PWA:            100/100
 ### Bundle Size
 
 ```
-Main bundle:     ~150KB (gzipped)
+Main bundle:     ~160KB (gzipped) +10KB for auth
 Vendor bundle:   ~80KB (gzipped)
-Total:           ~230KB
+Total:           ~240KB
 First Load:      < 1 second on 4G
 ```
-
-### Optimizations Applied
-
-1. **Code Splitting** - Lazy load pages
-2. **Tree Shaking** - Remove unused code
-3. **Compression** - Gzip all assets
-4. **Caching** - Service worker caches
-5. **Image Optimization** - SVG icons
-6. **Debouncing** - Search inputs
-7. **Virtual Lists** - For large topic lists
 
 ---
 
 ## 📴 Offline Functionality
 
-### How It Works
+### Premium Profile
+- Stored in IndexedDB
+- Persists across sessions
+- Syncs with backend when online
+- Used for API authentication
 
-**Download Process:**
-```
-1. User clicks download icon on topic
-2. Fetch full content: GET /api/topics/{id}/
-3. Save to IndexedDB: db.topics.add({...})
-4. Update download state in Zustand
-5. Show success toast
-6. Icon changes from cloud to checkmark
-```
-
-**Offline Access:**
-```
-1. User opens topic detail page
-2. Check network status
-3. If offline:
-   - Query IndexedDB: db.topics.get(id)
-   - Display cached content
-4. If online:
-   - Fetch fresh data from API
-   - Update IndexedDB in background
-```
-
-**Service Worker Strategy:**
-- **Network First** for API calls
-- **Cache First** for static assets
-- **Stale While Revalidate** for images
-
----
-
-## 🧪 Testing
-
-### Manual Testing Checklist
-
-**Installation**
-- [ ] Install on iOS (Safari → Share → Add to Home Screen)
-- [ ] Install on Android (Chrome → Menu → Install app)
-- [ ] Icon appears on home screen
-- [ ] Opens in standalone mode (no browser UI)
-
-**Functionality**
-- [ ] Browse departments
-- [ ] View courses in department
-- [ ] View topics in course
-- [ ] Download topic
-- [ ] View downloaded topic offline
-- [ ] Share topic (native share)
-- [ ] Copy topic to clipboard
-- [ ] Delete downloaded topic
-- [ ] View "My Downloads" page
-
-**Offline Mode**
-- [ ] Enable airplane mode
-- [ ] Open app (should load)
-- [ ] View downloaded topics (should work)
-- [ ] Try to download new topic (should show error)
-- [ ] Navigate between downloaded topics
-- [ ] Share/copy still works
-
-**Performance**
-- [ ] App loads in < 2 seconds on 4G
-- [ ] Smooth scrolling
-- [ ] No layout shifts
-- [ ] Images load quickly
+### Downloaded Content
+- Saved with user_id
+- Access checked against profile
+- Premium topics remain accessible offline
 
 ---
 
@@ -416,161 +332,62 @@ First Load:      < 1 second on 4G
 
 ### Vercel (Recommended)
 
-**Automatic Deployment:**
-
 1. **Push to GitHub**
 ```bash
 git add .
-git commit -m "Deploy PWA"
+git commit -m "Deploy PWA with premium features"
 git push origin main
 ```
 
 2. **Connect to Vercel**
    - Go to vercel.com
-   - Click "New Project"
-   - Import from GitHub
-   - Select repository
+   - Import repository
+   - Configure environment:
+     ```
+     VITE_API_URL=https://api.cafphy.com
+     ```
 
-3. **Configure**
-   - Framework: Vite
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
-   - Install Command: `npm install`
-
-4. **Environment Variables**
-```
-VITE_API_URL=https://api.cafphy.com
-```
-
-5. **Deploy**
-   - Click "Deploy"
-   - Wait for build (~2 minutes)
+3. **Deploy**
+   - Automatic on every push
    - Get URL: `https://cafphy-pwa.vercel.app`
-
-**Custom Domain:**
-```
-pwa.cafphy.com → Vercel project
-```
-
----
-
-### Netlify
-
-```bash
-# 1. Build
-npm run build
-
-# 2. Deploy
-netlify deploy --prod --dir=dist
-```
-
-**netlify.toml:**
-```toml
-[build]
-  command = "npm run build"
-  publish = "dist"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-```
-
----
-
-### GitHub Pages
-
-```bash
-# 1. Install gh-pages
-npm install -D gh-pages
-
-# 2. Add scripts to package.json
-"predeploy": "npm run build",
-"deploy": "gh-pages -d dist"
-
-# 3. Update vite.config.ts
-base: '/cafphy-pwa/',
-
-# 4. Deploy
-npm run deploy
-```
-
----
-
-## 🐛 Troubleshooting
-
-### "Failed to fetch"
-**Cause:** Backend API not running or CORS issue
-**Solution:**
-```bash
-# Check backend is running
-curl http://localhost:8000/api/departments/
-
-# Check CORS settings in backend settings.py
-CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]
-```
-
-### PWA not installing
-**Cause:** Missing requirements
-**Solution:**
-- Must use HTTPS (or localhost)
-- Check manifest.json is valid
-- Service worker must be registered
-- Icons must be 192x192 and 512x512
-
-### IndexedDB quota exceeded
-**Cause:** Too many downloads
-**Solution:**
-```typescript
-// Delete old downloads
-await db.topics.where('downloadedAt')
-  .below(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30 days
-  .delete();
-```
-
-### Service worker not updating
-**Cause:** Aggressive caching
-**Solution:**
-```bash
-# In browser DevTools
-Application → Service Workers → Unregister
-# Then hard refresh: Cmd+Shift+R (Mac) or Ctrl+Shift+R (Windows)
-```
 
 ---
 
 ## 📖 Documentation
 
-- **[PHASE1.md](PHASE1.md)** - Development guide
+- **[PHASE1.md](docs/PHASE1.md)** - Offline-first architecture
+- **[PHASE2.md](docs/PHASE2.md)** - Premium features implementation
 - **React Docs** - https://react.dev
 - **Material-UI** - https://mui.com
 - **TanStack Query** - https://tanstack.com/query
 - **Dexie.js** - https://dexie.org
-- **PWA Guide** - https://web.dev/progressive-web-apps/
 
 ---
 
-## 🎯 Roadmap
+## 🎯 Version History
 
-### Current Phase ✅
+### Phase 1 ✅ (Completed)
 - [x] Offline-first architecture
 - [x] Download & manage topics
 - [x] Share functionality
 - [x] Installable PWA
 - [x] Material-UI design
-- [x] TypeScript
 - [x] IndexedDB storage
 
-### Next Phase 🚧
+### Phase 2 ✅ (Current)
+- [x] Premium user registration
+- [x] Access control (community vs premium)
+- [x] User profile storage
+- [x] Filtered content by user
+- [x] API authentication
+
+### Phase 3 🚧 (Planned)
 - [ ] Search functionality
-- [ ] Filter topics (by status, department)
+- [ ] Filter topics by status/department
 - [ ] Bulk download (entire course)
 - [ ] Export to PDF
 - [ ] Dark mode toggle
-- [ ] User authentication
-- [ ] Sync across devices
 - [ ] Push notifications
-- [ ] Background sync
 
 ---
 
@@ -578,14 +395,6 @@ Application → Service Workers → Unregister
 
 ```json
 {
-  "name": "cafphy-pwa",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -599,59 +408,18 @@ Application → Service Workers → Unregister
     "dexie": "^3.2.4",
     "dexie-react-hooks": "^1.1.7",
     "zustand": "^4.4.7"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
-    "typescript": "^5.3.3",
-    "vite": "^5.0.8",
-    "vite-plugin-pwa": "^0.17.4"
   }
 }
 ```
 
 ---
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open Pull Request
-
-**Code Style:**
-- Use TypeScript for all new code
-- Follow Material-UI design patterns
-- Add comments for complex logic
-- Keep components small and focused
-
----
-
-## 📝 License
-
-Educational use only.
-
----
-
 ## 👨‍💻 Support
 
-- **Documentation**: PHASE1.md, README.md
+- **Documentation**: docs/PHASE1.md, docs/PHASE2.md
 - **Issues**: GitHub Issues
 - **Email**: support@cafphy.com
 
 ---
 
-## 🎉 Acknowledgments
-
-- **Vite** - Lightning-fast build tool
-- **React** - UI library
-- **Material-UI** - Beautiful components
-- **TanStack Query** - Smart data fetching
-- **Dexie.js** - Easy IndexedDB
-- **Workbox** - Service worker magic
-
----
-
-**Built with ❤️ for students who need their notes offline.**
+**Built with ❤️ for students who need secure, offline access to study materials.**
