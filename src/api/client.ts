@@ -1,45 +1,38 @@
 import axios from 'axios';
 import { dbHelpers } from '../db/schema';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const apiClient = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request interceptor - ADD PREMIUM USER ID TO HEADERS
-apiClient.interceptors.request.use(
-  async (config) => {
+// CRITICAL: Add user_id to ALL requests
+apiClient.interceptors.request.use(async (config) => {
+  try {
     // Get premium profile from IndexedDB
     const profile = await dbHelpers.getPremiumProfile();
     
-    if (profile) {
-      // Add user_id to headers for premium access filtering
+    if (profile?.user_id) {
+      // Add user_id as query param for GET requests
+      if (config.method === 'get') {
+        config.params = {
+          ...config.params,
+          user_id: profile.user_id,
+        };
+      }
+      
+      // Add user_id as header for all requests
       config.headers['X-User-ID'] = profile.user_id.toString();
     }
-    
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+  } catch (error) {
+    console.error('Failed to get premium profile:', error);
   }
-);
+  
+  return config;
+});
 
-// Response interceptor (for error handling)
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response) {
-      console.error('API Error:', error.response.status, error.response.data);
-    } else if (error.request) {
-      console.error('Network Error:', error.message);
-    } else {
-      console.error('Error:', error.message);
-    }
-    return Promise.reject(error);
-  }
-);
+export default apiClient;
