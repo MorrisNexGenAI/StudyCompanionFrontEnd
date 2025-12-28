@@ -1,6 +1,6 @@
 # Study Companion PWA - Progressive Web App
 
-An offline-first mobile study notes application with premium content management. Download topics once, access them anywhere without internet.
+An offline-first mobile study notes application with premium content management and intelligent study mode. Download topics once, access them anywhere without internet.
 
 ---
 
@@ -21,6 +21,15 @@ An offline-first mobile study notes application with premium content management.
 - 👤 **Personal Profile** - View your name, code, and access level
 - 🎯 **Filtered Content** - See only topics assigned to you
 - 📊 **Usage Tracking** - Local analytics on downloaded topics
+
+### Study Mode Features (Phase 3) ⭐ NEW
+- 🎯 **Smart Q&A Parsing** - AI-generated content parsed into flashcard format
+- 📦 **Intelligent Chunking** - Content split into 5-question study chunks
+- 🧠 **Progressive Disclosure** - Show question/answer first, expand for details
+- 📊 **Visual Progress** - Track progress through each chunk
+- 📋 **Table Support** - Beautiful rendering of table-based answers
+- ⚡ **Distraction-Free** - Focus on one concept at a time
+- 💾 **Auto-Save Progress** - Resume where you left off
 
 ### Progressive Web App
 - 📲 **Installable** - Add to home screen (iOS/Android)
@@ -58,6 +67,8 @@ An offline-first mobile study notes application with premium content management.
 │  - Downloads    │  │  - All Topics   │
 │  - Premium      │  │  - Premium Auth │
 │    Profile      │  │  - Filtering    │
+│  - Study        │  │  - AI Refine    │
+│    Progress     │  │                 │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -115,15 +126,17 @@ cafphy-pwa/
 │   ├── components/             # Reusable UI components
 │   │   ├── Layout.tsx          # App shell with nav
 │   │   ├── TopicCard.tsx       # Topic list item
+│   │   ├── StudyCard.tsx       # NEW: Q&A flashcard component
 │   │   ├── LoadingState.tsx    # Loading skeleton
 │   │   └── EmptyState.tsx      # Empty list message
 │   │
 │   ├── pages/                  # Route pages
-│   │   ├── PremiumSetup.tsx    # NEW: Premium registration
+│   │   ├── PremiumSetup.tsx    # Premium registration
 │   │   ├── DepartmentsPage.tsx # Department selection
 │   │   ├── CoursesPage.tsx     # Courses in dept
 │   │   ├── TopicsPage.tsx      # Topics in course
 │   │   ├── TopicDetailPage.tsx # Full topic view
+│   │   ├── StudyModePage.tsx   # NEW: Interactive study mode
 │   │   └── DownloadsPage.tsx   # Offline downloads
 │   │
 │   ├── db/                     # IndexedDB layer
@@ -142,6 +155,9 @@ cafphy-pwa/
 │   ├── types/                  # TypeScript types
 │   │   └── index.ts            # Shared interfaces
 │   │
+│   ├── utils/                  # NEW: Utility functions
+│   │   └── qaParser.ts         # Parse AI Q&A into structured data
+│   │
 │   ├── App.tsx                 # Root component
 │   ├── main.tsx                # Entry point
 │   ├── theme.ts                # MUI theme config
@@ -157,7 +173,8 @@ cafphy-pwa/
 │
 ├── docs/                       # Documentation
 │   ├── PHASE1.md               # Phase 1: Offline-first PWA
-│   └── PHASE2.md               # Phase 2: Premium features
+│   ├── PHASE2.md               # Phase 2: Premium features
+│   └── PHASE3.md               # Phase 3: Study mode (NEW)
 │
 ├── vite.config.ts              # Vite + PWA config
 ├── tsconfig.json               # TypeScript config
@@ -200,12 +217,37 @@ interface DownloadedTopic {
   updatedAt: number;
 }
 
-// Premium User Profile (NEW in Phase 2)
+// Premium User Profile
 interface PremiumProfile {
   user_id: number;
   name: string;
   code: string;
   registered_at: number;
+}
+
+// Study Progress (NEW in Phase 3)
+interface StudyProgress {
+  topic_id: number;
+  current_chunk: number;
+  completed_chunks: number[];
+  last_studied: number;
+}
+
+// Parsed Q&A Structure (NEW in Phase 3)
+interface QuestionUnit {
+  id: string;              // "Q1", "Q2", etc.
+  question: string;
+  answer: string;
+  explanation?: string;    // Optional
+  example?: string;        // Optional
+  isTable: boolean;        // true if answer is table
+}
+
+interface StudyChunk {
+  chunkNumber: number;     // 1, 2, 3...
+  questions: QuestionUnit[];
+  startIndex: number;
+  endIndex: number;
 }
 ```
 
@@ -213,6 +255,7 @@ interface PremiumProfile {
 **Stores:**
 - `topics` - Downloaded topics
 - `premiumProfile` - User authentication data
+- `studyProgress` - Track progress per topic (NEW)
 
 ---
 
@@ -220,7 +263,7 @@ interface PremiumProfile {
 
 ### Endpoints Used
 
-**Authentication (NEW)**
+**Authentication**
 ```
 POST /premium/api/register-or-login/
 Body: { name: string, code: string }
@@ -256,6 +299,89 @@ Response: TopicDetail | 403 Access Denied
 All API requests automatically include `user_id`:
 - As query parameter for GET requests
 - As `X-User-ID` header for all requests
+
+---
+
+## 🎓 Study Mode (Phase 3)
+
+### Content Parsing
+
+**AI-Generated Format:**
+```
+Q1: What causes malaria?
+Answer: Infected mosquito bite transmits parasite
+
+Explanation: Tiny life forms not visible to naked eye
+
+Example: Malaria parasites are a type of microbe
+
+---
+
+Q2: What key roles do microbes play?
+Answer: Nutrient cycling, biodegradation, disease, biotechnology
+
+Explanation: Essential for environment, food, and human health
+
+Example: Gut bacteria help digest food
+
+---
+```
+
+**Parsed Structure:**
+```typescript
+{
+  totalQuestions: 20,
+  chunks: [
+    {
+      chunkNumber: 1,
+      questions: [Q1, Q2, Q3, Q4, Q5],
+      startIndex: 0,
+      endIndex: 4
+    },
+    {
+      chunkNumber: 2,
+      questions: [Q6, Q7, Q8, Q9, Q10],
+      startIndex: 5,
+      endIndex: 9
+    },
+    // ... more chunks
+  ]
+}
+```
+
+### Study Flow
+
+```
+1. User opens topic → Sees "Study Mode" button
+2. Click "Study Mode" → Parser extracts Q&A structure
+3. Content chunked into groups of 5 questions
+4. User sees Chunk 1:
+   - Question 1 (expanded)
+   - Question 2 (collapsed)
+   - Question 3 (collapsed)
+   - Question 4 (collapsed)
+   - Question 5 (collapsed)
+5. Tap card → Expands to show Explanation + Example
+6. Navigate: Previous/Next buttons
+7. Progress indicator: "Chunk 1 of 4 • Question 2 of 5"
+8. Complete chunk → Move to next chunk
+9. Progress auto-saved to IndexedDB
+```
+
+### UI Components
+
+**StudyCard.tsx:**
+- Displays one Q&A unit
+- Collapsible Explanation/Example
+- Table rendering for structured answers
+- Progress indicator
+- Expand/collapse animation
+
+**StudyModePage.tsx:**
+- Container for study session
+- Chunk navigation
+- Progress tracking
+- Exit confirmation
 
 ---
 
@@ -305,9 +431,9 @@ PWA:            100/100
 ### Bundle Size
 
 ```
-Main bundle:     ~160KB (gzipped) +10KB for auth
+Main bundle:     ~180KB (gzipped) +20KB for study mode
 Vendor bundle:   ~80KB (gzipped)
-Total:           ~240KB
+Total:           ~260KB
 First Load:      < 1 second on 4G
 ```
 
@@ -326,6 +452,11 @@ First Load:      < 1 second on 4G
 - Access checked against profile
 - Premium topics remain accessible offline
 
+### Study Progress
+- Saved locally in IndexedDB
+- No internet required
+- Syncs when back online (future)
+
 ---
 
 ## 🚢 Deployment
@@ -335,7 +466,7 @@ First Load:      < 1 second on 4G
 1. **Push to GitHub**
 ```bash
 git add .
-git commit -m "Deploy PWA with premium features"
+git commit -m "Deploy PWA with study mode"
 git push origin main
 ```
 
@@ -357,6 +488,7 @@ git push origin main
 
 - **[PHASE1.md](docs/PHASE1.md)** - Offline-first architecture
 - **[PHASE2.md](docs/PHASE2.md)** - Premium features implementation
+- **[PHASE3.md](docs/PHASE3.md)** - Study mode with Q&A parsing (NEW)
 - **React Docs** - https://react.dev
 - **Material-UI** - https://mui.com
 - **TanStack Query** - https://tanstack.com/query
@@ -374,20 +506,30 @@ git push origin main
 - [x] Material-UI design
 - [x] IndexedDB storage
 
-### Phase 2 ✅ (Current)
+### Phase 2 ✅ (Completed)
 - [x] Premium user registration
 - [x] Access control (community vs premium)
 - [x] User profile storage
 - [x] Filtered content by user
 - [x] API authentication
 
-### Phase 3 🚧 (Planned)
-- [ ] Search functionality
+### Phase 3 ✅ (Current) ⭐ NEW
+- [x] Q&A parser for AI-generated content
+- [x] Intelligent chunking (5 questions per chunk)
+- [x] Interactive study cards
+- [x] Progressive disclosure (expand/collapse)
+- [x] Table support for structured answers
+- [x] Study progress tracking
+- [x] Distraction-free study mode
+
+### Phase 4 🚧 (Planned)
+- [ ] Search functionality across topics
 - [ ] Filter topics by status/department
 - [ ] Bulk download (entire course)
 - [ ] Export to PDF
 - [ ] Dark mode toggle
-- [ ] Push notifications
+- [ ] Spaced repetition algorithm
+- [ ] Study statistics dashboard
 
 ---
 
@@ -416,10 +558,10 @@ git push origin main
 
 ## 👨‍💻 Support
 
-- **Documentation**: docs/PHASE1.md, docs/PHASE2.md
+- **Documentation**: docs/PHASE1.md, docs/PHASE2.md, docs/PHASE3.md
 - **Issues**: GitHub Issues
-- **Email**: support@cafphy.com
+- **Email**: studycompanion.gmail.com
 
 ---
 
-**Built with ❤️ for students who need secure, offline access to study materials.**
+**Built with ❤️ for students who need secure, offline access to study materials with intelligent learning tools.**

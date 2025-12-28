@@ -75,5 +75,29 @@ export interface TopicFull {
   is_premium: boolean; // ADD THIS
 }
 
+// ADD THESE TO YOUR EXISTING TYPES
+
+export interface QuestionUnit {
+  id: string;              // "Q1", "Q2", etc.
+  question: string;        // "What causes malaria?"
+  answer: string;          // "Infected mosquito bite transmits parasite"
+  explanation?: string;    // Optional (for tables)
+  example?: string;        // Optional (for tables)
+  isTable: boolean;        // true if answer is a table/list
+}
+
+export interface StudyChunk {
+  chunkNumber: number;     // 1, 2, 3...
+  questions: QuestionUnit[]; // 5-6 questions
+  startIndex: number;      // For progress (0, 5, 10...)
+  endIndex: number;        // For progress (4, 9, 14...)
+}
+
+export interface ParsedContent {
+  totalQuestions: number;
+  chunks: StudyChunk[];
+  rawText: string;         // Keep original for fallback
+}
+
 // Sync status
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
