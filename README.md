@@ -560,7 +560,7 @@ git push origin main
 
 - **Documentation**: docs/PHASE1.md, docs/PHASE2.md, docs/PHASE3.md
 - **Issues**: GitHub Issues
-- **Email**: studycompanion.gmail.com
+- **Email**: studycompanion.@gmail.com
 
 ---
 
