@@ -1,3 +1,6 @@
+
+// ==================== UPDATED SETTINGS: src/pages/Settings.tsx ====================
+
 import { useState, useEffect } from 'react';
 import { Layout } from '../components/Layout';
 import { useStore } from '../stores/useStore';
@@ -21,6 +24,7 @@ import {
   DialogContent,
   DialogActions,
   Alert,
+  Chip,
 } from '@mui/material';
 
 import {
@@ -30,6 +34,7 @@ import {
   DeleteForever,
   Person,
   Logout,
+  School,
 } from '@mui/icons-material';
 
 export const Settings = () => {
@@ -121,7 +126,21 @@ export const Settings = () => {
                     {profile.code}
                   </Typography>
 
-                  <Typography variant="caption" color="text.secondary" mt={1} display="block">
+                  {/* NEW: Department Display */}
+                  <Typography variant="body2" color="text.secondary" mt={2}>
+                    Department
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                    <School fontSize="small" color="secondary" />
+                    <Chip
+                      label={profile.department_name}
+                      size="small"
+                      color="secondary"
+                      variant="outlined"
+                    />
+                  </Box>
+
+                  <Typography variant="caption" color="text.secondary" mt={2} display="block">
                     Registered: {new Date(profile.registered_at).toLocaleDateString()}
                   </Typography>
                 </Box>
@@ -151,8 +170,8 @@ export const Settings = () => {
             <ListItemButton onClick={handleChangeDepartment}>
               <DepartmentIcon sx={{ mr: 2, color: 'primary.main' }} />
               <ListItemText
-                primary="Change Department"
-                secondary="Select a different department"
+                primary="View Department"
+                secondary="Go to your department page"
               />
             </ListItemButton>
 
@@ -182,7 +201,7 @@ export const Settings = () => {
               <Info sx={{ mr: 2, color: 'text.secondary' }} />
               <ListItemText
                 primary="About"
-                secondary="Study Companion v3.0.0"
+                secondary="Study Companion v3.1.0 - Phase 5"
               />
             </ListItem>
           </List>

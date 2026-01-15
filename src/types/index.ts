@@ -1,3 +1,5 @@
+// ==================== UPDATED TYPES: src/types/index.ts ====================
+
 // Department
 export interface Department {
   id: number;
@@ -15,52 +17,17 @@ export interface Course {
 }
 
 
-// Downloaded topic (stored locally)
-export interface DownloadedTopic {
-  id: number; // Same as server topic_id
-  title: string;
-  page_range: string;
-  refined_summary: string;
-  course_name: string;
-  departments: string; // CSV string
-  downloaded_at: number;
-  updated_at: number; // Server's updated_at
-}
-
-// App state
-export interface AppState {
-  selectedDepartmentId: number | null;
-  setSelectedDepartment: (id: number) => void;
-  clearSelectedDepartment: () => void;
-}
-
-export interface PremiumProfile {
-  user_id: number;
-  name: string;
-  code: string;
-  registered_at: number; // Unix timestamp
-}
-
-// API Response for registration/login
-export interface PremiumAuthResponse {
-  user_id: number;
-  name: string;
-  code: string;
-  is_new: boolean;
-  message: string;
-}
-
-// Update TopicMeta to include is_premium
+// Topic Metadata
 export interface TopicMeta {
   id: number;
   title: string;
   page_range: string;
   updated_at: number;
   is_refined: boolean;
-  is_premium: boolean; // ADD THIS
+  is_premium: boolean;
 }
 
-// Update TopicFull to include is_premium
+// Full Topic
 export interface TopicFull {
   id: number;
   title: string;
@@ -72,32 +39,84 @@ export interface TopicFull {
   departments: string[];
   updated_at: number;
   created_at: number;
-  is_premium: boolean; // ADD THIS
+  is_premium: boolean;
 }
 
-// ADD THESE TO YOUR EXISTING TYPES
+// Downloaded topic (stored locally)
+export interface DownloadedTopic {
+  id: number;
+  title: string;
+  page_range: string;
+  refined_summary: string;
+  course_name: string;
+  departments: string;
+  downloaded_at: number;
+  updated_at: number;
+}
 
+// UPDATED: Premium Profile with department info
+export interface PremiumProfile {
+  user_id: number;
+  name: string;
+  code: string;
+  department_id: number;      // NEW
+  department_name: string;    // NEW
+  registered_at: number;
+}
+
+// UPDATED: API Response for registration/login
+export interface PremiumAuthResponse {
+  user_id: number;
+  name: string;
+  code: string;
+  department_id: number;      // NEW
+  department_name: string;    // NEW
+  is_new: boolean;
+}
+
+// NEW: Courses API Response with year filtering
+export interface CoursesResponse {
+  courses: Course[];
+  available_years: string[];
+  current_year: string | null;
+  department: {
+    id: number;
+    name: string;
+  };
+}
+
+// App state
+export interface AppState {
+  selectedDepartmentId: number | null;
+  selectedYear: string | null;              // NEW
+  setSelectedDepartment: (id: number) => void;
+  setSelectedYear: (year: string) => void;  // NEW
+  clearSelectedDepartment: () => void;
+}
+
+// Study content types
 export interface QuestionUnit {
-  id: string;              // "Q1", "Q2", etc.
-  question: string;        // "What causes malaria?"
-  answer: string;          // "Infected mosquito bite transmits parasite"
-  explanation?: string;    // Optional (for tables)
-  example?: string;        // Optional (for tables)
-  isTable: boolean;        // true if answer is a table/list
+  id: string;
+  question: string;
+  answer: string;
+  explanation?: string;
+  example?: string;
+  isTable: boolean;
 }
 
 export interface StudyChunk {
-  chunkNumber: number;     // 1, 2, 3...
-  questions: QuestionUnit[]; // 5-6 questions
-  startIndex: number;      // For progress (0, 5, 10...)
-  endIndex: number;        // For progress (4, 9, 14...)
+  chunkNumber: number;
+  questions: QuestionUnit[];
+  startIndex: number;
+  endIndex: number;
 }
 
 export interface ParsedContent {
   totalQuestions: number;
   chunks: StudyChunk[];
-  rawText: string;         // Keep original for fallback
+  rawText: string;
 }
 
 // Sync status
 export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+

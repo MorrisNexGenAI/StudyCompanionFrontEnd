@@ -1,83 +1,96 @@
+
+// ==================== UPDATED HOOKS: src/hooks/useDepartments.ts ====================
+
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { departmentsAPI, coursesAPI, topicsAPI } from '../api/endpoints';
-import { db } from '../db/schema';
+import { db} from '../db/schema';
 import type { DownloadedTopic } from '../types';
 
-// Departments
-export const useDepartments = () => {
+// Get all departments (for registration)
+export const useAllDepartments = () => {
   return useQuery({
-    queryKey: ['departments'],
+    queryKey: ['all-departments'],
     queryFn: async () => {
-      // Try to get from IndexedDB first
-      const cached = await db.departments.toArray();
-      if (cached.length > 0) {
-        return cached;
-      }
-      
-      // Fetch from API and cache
-      const data = await departmentsAPI.getAll();
-      await db.departments.bulkPut(data);
-      return data;
+      return await departmentsAPI.getAll();
     },
-    staleTime: Infinity, // Departments rarely change
+    staleTime: Infinity,
   });
 };
 
-// Courses by department
-export const useCourses = (departmentId: number | null) => {
+// NEW: Get user's specific department
+export const useUserDepartment = (userId: number | null) => {
   return useQuery({
-    queryKey: ['courses', departmentId],
+    queryKey: ['user-department', userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      return await departmentsAPI.getUserDepartment(userId);
+    },
+    enabled: !!userId,
+    staleTime: Infinity,
+  });
+};
+
+// NEW: Get available years for department
+export const useAvailableYears = (departmentId: number | null) => {
+  return useQuery({
+    queryKey: ['available-years', departmentId],
     queryFn: async () => {
       if (!departmentId) return [];
+      return await departmentsAPI.getAvailableYears(departmentId);
+    },
+    enabled: !!departmentId,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+// UPDATED: Courses by department with year filter
+export const useCourses = (departmentId: number | null, year: string | null) => {
+  return useQuery({
+    queryKey: ['courses', departmentId, year],
+    queryFn: async () => {
+      if (!departmentId) return null;
       
-      // Try cache first
-      const cached = await db.courses
-        .where('departments.id')
-        .equals(departmentId)
-        .toArray();
+      // Fetch from API with year filter
+      const data = await coursesAPI.getByDepartmentAndYear(departmentId, year || undefined);
       
-      if (cached.length > 0) {
-        return cached;
+      // Cache courses
+      if (data.courses.length > 0) {
+        await db.courses.bulkPut(data.courses);
       }
       
-      // Fetch and cache
-      const data = await coursesAPI.getByDepartment(departmentId);
-      await db.courses.bulkPut(data);
       return data;
     },
     enabled: !!departmentId,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 };
 
-// Topics by course
+// Topics by course (unchanged)
 export const useTopics = (courseId: number | null) => {
   return useQuery({
     queryKey: ['topics', courseId],
     queryFn: async () => {
       if (!courseId) return [];
       
-      // Always fetch fresh metadata (it's small)
       const data = await topicsAPI.getByCourse(courseId);
       await db.topics.bulkPut(data);
       return data;
     },
     enabled: !!courseId,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 1 * 60 * 1000,
   });
 };
 
-// Single topic (full)
+// Single topic (unchanged)
 export const useTopic = (topicId: number | null) => {
   return useQuery({
     queryKey: ['topic', topicId],
     queryFn: async () => {
       if (!topicId) return null;
       
-      // ALWAYS check IndexedDB first for offline copy
+      // Check IndexedDB first
       const downloaded = await db.downloadedTopics.get(topicId);
       if (downloaded) {
-        console.log('Loading from offline storage:', downloaded);
         return {
           id: downloaded.id,
           title: downloaded.title,
@@ -89,14 +102,13 @@ export const useTopic = (topicId: number | null) => {
           departments: downloaded.departments.split(', ').filter(d => d.trim()),
           updated_at: downloaded.updated_at,
           created_at: downloaded.downloaded_at,
+          is_premium: false,
         };
       }
       
-      // If not downloaded, fetch from API and auto-download
-      console.log('Fetching from API:', topicId);
+      // Fetch from API and auto-save
       const apiData = await topicsAPI.getFull(topicId);
       
-      // Auto-save to IndexedDB for future offline access
       const toSave = {
         id: apiData.id,
         title: apiData.title,
@@ -112,11 +124,11 @@ export const useTopic = (topicId: number | null) => {
       return apiData;
     },
     enabled: !!topicId,
-    staleTime: Infinity, // Once loaded, don't refetch
+    staleTime: Infinity,
   });
 };
 
-// Download topic mutation
+// Download topic mutation (unchanged)
 export const useDownloadTopic = () => {
   const queryClient = useQueryClient();
   
@@ -144,7 +156,7 @@ export const useDownloadTopic = () => {
   });
 };
 
-// Delete downloaded topic
+// Delete downloaded topic (unchanged)
 export const useDeleteDownloadedTopic = () => {
   const queryClient = useQueryClient();
   

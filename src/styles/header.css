@@ -1,0 +1,302 @@
+/* styles/Header.css */
+
+.header-wrapper {
+  padding: 20px 16px;
+  position: relative;
+  overflow: visible;
+  background: #f5f7fa !important;
+}
+
+/* Animated Background Patterns - Now inside card */
+.header-pattern {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.12;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.6) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255, 255, 255, 0.5) 0%, transparent 50%);
+  animation: float 20s ease-in-out infinite;
+  border-radius: 16px;
+}
+
+.header-pattern-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(45deg, transparent 48%, rgba(255, 255, 255, 0.1) 50%, transparent 52%);
+  background-size: 30px 30px;
+  opacity: 0.5;
+  border-radius: 16px;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(20px, -20px) scale(1.05);
+  }
+}
+
+/* Main Header Card with Gradient Background */
+.header-card {
+  background: linear-gradient(135deg, #81077b 0%, #694ba2 100%) !important;
+  backdrop-filter: blur(20px);
+  border: none !important;
+  box-shadow: 
+    0 10px 40px rgba(102, 126, 234, 0.4),
+    0 4px 12px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideInDown 0.6s ease-out;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px !important;
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.header-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    0 20px 60px rgba(102, 126, 234, 0.5),
+    0 8px 20px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Desktop Layout - Hidden on Mobile */
+.header-desktop-layout {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .header-desktop-layout {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 48px;
+    align-items: center;
+  }
+}
+
+/* Mobile Layout - Hidden on Desktop */
+.header-mobile-layout {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .header-mobile-layout {
+    display: none;
+  }
+}
+
+/* Desktop Department Info */
+.department-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.department-emoji-compact {
+  font-size: 64px !important;
+  line-height: 1;
+  animation: pulse 3s ease-in-out infinite;
+  filter: drop-shadow(0 4px 8px rgba(22, 9, 136, 0.1));
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Desktop Stats */
+.stats-compact {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  min-width: 120px;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.stat-icon-compact {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s;
+}
+
+.stat-item:hover .stat-icon-compact {
+  transform: rotate(5deg) scale(1.1);
+}
+
+/* Mobile-Specific Styles */
+
+/* Department Name Card for Mobile */
+.mobile-department-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%) !important;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border-radius: 12px !important;
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.mobile-department-card:active {
+  transform: scale(0.98);
+  box-shadow: 
+    0 2px 12px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+.mobile-department-name {
+  font-size: 1.75rem !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.5px;
+}
+
+@media (max-width: 400px) {
+  .mobile-department-name {
+    font-size: 1.5rem !important;
+  }
+}
+
+@media (min-width: 401px) and (max-width: 600px) {
+  .mobile-department-name {
+    font-size: 2rem !important;
+  }
+}
+
+/* Welcome Message Card for Mobile */
+.mobile-welcome-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%) !important;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border-radius: 12px !important;
+  margin-bottom: 16px;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.mobile-welcome-card:active {
+  transform: scale(0.98);
+  box-shadow: 
+    0 2px 12px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+.mobile-emoji {
+  font-size: 56px !important;
+  line-height: 1;
+  animation: pulse 3s ease-in-out infinite;
+}
+
+.mobile-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mobile-stat-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 90px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.mobile-stat-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-stat-full {
+  grid-column: 1 / -1;
+  max-width: 50%;
+  margin: 0 auto;
+}
+
+.mobile-stat-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 767px) {
+  .header-wrapper {
+    padding: 20px 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .mobile-emoji {
+    font-size: 48px !important;
+  }
+  
+  .mobile-stat-card {
+    padding: 10px;
+    min-height: 80px;
+  }
+  
+  .mobile-stat-icon {
+    width: 32px;
+    height: 32px;
+  }
+}

@@ -1,0 +1,1374 @@
+// ==================== UPDATED TYPES: src/types/index.ts ====================
+
+// Department
+export interface Department {
+  id: number;
+  name: string;
+}
+
+// Course
+export interface Course {
+  id: number;
+  name: string;
+  year: string;
+  departments: Department[];
+  topic_count: number;
+  refined_count: number;
+}
+
+// Topic Metadata
+export interface TopicMeta {
+  id: number;
+  title: string;
+  page_range: string;
+  updated_at: number;
+  is_refined: boolean;
+  is_premium: boolean;
+}
+
+// Full Topic
+export interface TopicFull {
+  id: number;
+  title: string;
+  page_range: string;
+  refined_summary: string;
+  raw_text: string;
+  course_name: string;
+  course_year: string;
+  departments: string[];
+  updated_at: number;
+  created_at: number;
+  is_premium: boolean;
+}
+
+// Downloaded topic (stored locally)
+export interface DownloadedTopic {
+  id: number;
+  title: string;
+  page_range: string;
+  refined_summary: string;
+  course_name: string;
+  departments: string;
+  downloaded_at: number;
+  updated_at: number;
+}
+
+// UPDATED: Premium Profile with department info
+export interface PremiumProfile {
+  user_id: number;
+  name: string;
+  code: string;
+  department_id: number;      // NEW
+  department_name: string;    // NEW
+  registered_at: number;
+}
+
+// UPDATED: API Response for registration/login
+export interface PremiumAuthResponse {
+  user_id: number;
+  name: string;
+  code: string;
+  department_id: number;      // NEW
+  department_name: string;    // NEW
+  is_new: boolean;
+}
+
+// NEW: Courses API Response with year filtering
+export interface CoursesResponse {
+  courses: Course[];
+  available_years: string[];
+  current_year: string | null;
+  department: {
+    id: number;
+    name: string;
+  };
+}
+
+// App state
+export interface AppState {
+  selectedDepartmentId: number | null;
+  selectedYear: string | null;              // NEW
+  setSelectedDepartment: (id: number) => void;
+  setSelectedYear: (year: string) => void;  // NEW
+  clearSelectedDepartment: () => void;
+}
+
+// Study content types
+export interface QuestionUnit {
+  id: string;
+  question: string;
+  answer: string;
+  explanation?: string;
+  example?: string;
+  isTable: boolean;
+}
+
+export interface StudyChunk {
+  chunkNumber: number;
+  questions: QuestionUnit[];
+  startIndex: number;
+  endIndex: number;
+}
+
+export interface ParsedContent {
+  totalQuestions: number;
+  chunks: StudyChunk[];
+  rawText: string;
+}
+
+// Sync status
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+
+
+
+// ==================== UPDATED DATABASE: src/db/schema.ts ====================
+
+import type { Table } from 'dexie';
+import Dexie from 'dexie';
+import type { Department, Course, TopicMeta, DownloadedTopic, PremiumProfile } from '../types';
+
+export class CaffphyDB extends Dexie {
+  departments!: Table<Department, number>;
+  courses!: Table<Course, number>;
+  topics!: Table<TopicMeta, number>;
+  downloadedTopics!: Table<DownloadedTopic, number>;
+  premiumProfile!: Table<PremiumProfile, number>;
+
+  constructor() {
+    super('CaffphyDB');
+    
+    // Version 3 - Update premium profile with department fields
+    this.version(3).stores({
+      departments: 'id, name',
+      courses: 'id, name, year, *departments.id',  // Added year index
+      topics: 'id, course_id, updated_at',
+      downloadedTopics: 'id, downloaded_at, updated_at',
+      premiumProfile: 'user_id, department_id, registered_at',  // Added department_id index
+    });
+  }
+}
+
+export const db = new CaffphyDB();
+
+// Helper functions
+export const dbHelpers = {
+  // Clear all data
+  async clearAll() {
+    await db.departments.clear();
+    await db.courses.clear();
+    await db.topics.clear();
+    await db.downloadedTopics.clear();
+    await db.premiumProfile.clear();
+  },
+
+  // Get downloaded topic IDs
+  async getDownloadedTopicIds(): Promise<number[]> {
+    const topics = await db.downloadedTopics.toArray();
+    return topics.map(t => t.id);
+  },
+
+  // Check if topic is downloaded
+  async isTopicDownloaded(topicId: number): Promise<boolean> {
+    const topic = await db.downloadedTopics.get(topicId);
+    return !!topic;
+  },
+
+  // Premium Profile Management
+  async getPremiumProfile(): Promise<PremiumProfile | undefined> {
+    const profiles = await db.premiumProfile.toArray();
+    return profiles[0];
+  },
+
+  async savePremiumProfile(profile: PremiumProfile): Promise<void> {
+    await db.premiumProfile.clear();
+    await db.premiumProfile.add(profile);
+  },
+
+  async clearPremiumProfile(): Promise<void> {
+    await db.premiumProfile.clear();
+  },
+
+  async hasPremiumProfile(): Promise<boolean> {
+    const count = await db.premiumProfile.count();
+    return count > 0;
+  },
+
+  // Get storage size (approximate)
+  async getStorageSize(): Promise<number> {
+    const allData = await Promise.all([
+      db.departments.toArray(),
+      db.courses.toArray(),
+      db.topics.toArray(),
+      db.downloadedTopics.toArray(),
+      db.premiumProfile.toArray(),
+    ]);
+    
+    const jsonStr = JSON.stringify(allData);
+    return new Blob([jsonStr]).size;
+  }
+};
+
+
+// ==================== UPDATED API ENDPOINTS: src/api/endpoints.ts ====================
+
+import { apiClient } from './client';
+import type { Department, Course, TopicMeta, TopicFull, CoursesResponse } from '../types';
+
+// Departments
+export const departmentsAPI = {
+  // Get all departments (for registration)
+  getAll: async (): Promise<Department[]> => {
+    const { data } = await apiClient.get<{ departments: Department[] }>('/premium/api/departments/');
+    return data.departments;
+  },
+
+  // NEW: Get user's specific department
+  getUserDepartment: async (userId: number): Promise<{ user: any; department: Department }> => {
+    const { data } = await apiClient.get(`/premium/api/users/${userId}/department/`);
+    return data;
+  },
+
+  // NEW: Get available years for department
+  getAvailableYears: async (deptId: number): Promise<string[]> => {
+    const { data } = await apiClient.get<{ years: string[] }>(`/premium/api/departments/${deptId}/years/`);
+    return data.years;
+  },
+};
+
+// Courses
+export const coursesAPI = {
+  // UPDATED: Get courses by department with optional year filter
+  getByDepartmentAndYear: async (deptId: number, year?: string): Promise<CoursesResponse> => {
+    const params = year ? { year } : {};
+    // user_id is automatically added by interceptor
+    const { data } = await apiClient.get<CoursesResponse>(
+      `/premium/api/departments/${deptId}/courses/`,
+      { params }
+    );
+    return data;
+  },
+};
+
+// Topics
+export const topicsAPI = {
+  getByCourse: async (courseId: number): Promise<TopicMeta[]> => {
+    // user_id is automatically added by interceptor
+    const { data } = await apiClient.get<{ topics: TopicMeta[] }>(
+      `/premium/api/courses/${courseId}/topics/`
+    );
+    return data.topics;
+  },
+
+  getFull: async (topicId: number): Promise<TopicFull> => {
+    // user_id is automatically added by interceptor
+    const { data } = await apiClient.get<TopicFull>(`/premium/api/topics/${topicId}/`);
+    return data;
+  },
+};
+
+
+// ==================== UPDATED HOOKS: src/hooks/useDepartments.ts ====================
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { departmentsAPI, coursesAPI, topicsAPI } from '../api/endpoints';
+import { db, dbHelpers } from '../db/schema';
+import type { DownloadedTopic } from '../types';
+
+// Get all departments (for registration)
+export const useAllDepartments = () => {
+  return useQuery({
+    queryKey: ['all-departments'],
+    queryFn: async () => {
+      return await departmentsAPI.getAll();
+    },
+    staleTime: Infinity,
+  });
+};
+
+// NEW: Get user's specific department
+export const useUserDepartment = (userId: number | null) => {
+  return useQuery({
+    queryKey: ['user-department', userId],
+    queryFn: async () => {
+      if (!userId) return null;
+      return await departmentsAPI.getUserDepartment(userId);
+    },
+    enabled: !!userId,
+    staleTime: Infinity,
+  });
+};
+
+// NEW: Get available years for department
+export const useAvailableYears = (departmentId: number | null) => {
+  return useQuery({
+    queryKey: ['available-years', departmentId],
+    queryFn: async () => {
+      if (!departmentId) return [];
+      return await departmentsAPI.getAvailableYears(departmentId);
+    },
+    enabled: !!departmentId,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+// UPDATED: Courses by department with year filter
+export const useCourses = (departmentId: number | null, year: string | null) => {
+  return useQuery({
+    queryKey: ['courses', departmentId, year],
+    queryFn: async () => {
+      if (!departmentId) return null;
+      
+      // Fetch from API with year filter
+      const data = await coursesAPI.getByDepartmentAndYear(departmentId, year || undefined);
+      
+      // Cache courses
+      if (data.courses.length > 0) {
+        await db.courses.bulkPut(data.courses);
+      }
+      
+      return data;
+    },
+    enabled: !!departmentId,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+// Topics by course (unchanged)
+export const useTopics = (courseId: number | null) => {
+  return useQuery({
+    queryKey: ['topics', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      const data = await topicsAPI.getByCourse(courseId);
+      await db.topics.bulkPut(data);
+      return data;
+    },
+    enabled: !!courseId,
+    staleTime: 1 * 60 * 1000,
+  });
+};
+
+// Single topic (unchanged)
+export const useTopic = (topicId: number | null) => {
+  return useQuery({
+    queryKey: ['topic', topicId],
+    queryFn: async () => {
+      if (!topicId) return null;
+      
+      // Check IndexedDB first
+      const downloaded = await db.downloadedTopics.get(topicId);
+      if (downloaded) {
+        return {
+          id: downloaded.id,
+          title: downloaded.title,
+          page_range: downloaded.page_range,
+          refined_summary: downloaded.refined_summary,
+          raw_text: '',
+          course_name: downloaded.course_name,
+          course_year: '',
+          departments: downloaded.departments.split(', ').filter(d => d.trim()),
+          updated_at: downloaded.updated_at,
+          created_at: downloaded.downloaded_at,
+          is_premium: false,
+        };
+      }
+      
+      // Fetch from API and auto-save
+      const apiData = await topicsAPI.getFull(topicId);
+      
+      const toSave = {
+        id: apiData.id,
+        title: apiData.title,
+        page_range: apiData.page_range,
+        refined_summary: apiData.refined_summary,
+        course_name: apiData.course_name,
+        departments: apiData.departments.join(', '),
+        downloaded_at: Date.now(),
+        updated_at: apiData.updated_at,
+      };
+      await db.downloadedTopics.put(toSave);
+      
+      return apiData;
+    },
+    enabled: !!topicId,
+    staleTime: Infinity,
+  });
+};
+
+// Download topic mutation (unchanged)
+export const useDownloadTopic = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (topicId: number) => {
+      const topicData = await topicsAPI.getFull(topicId);
+      
+      const downloaded: DownloadedTopic = {
+        id: topicData.id,
+        title: topicData.title,
+        page_range: topicData.page_range,
+        refined_summary: topicData.refined_summary,
+        course_name: topicData.course_name,
+        departments: topicData.departments.join(', '),
+        downloaded_at: Date.now(),
+        updated_at: topicData.updated_at,
+      };
+      
+      await db.downloadedTopics.put(downloaded);
+      return downloaded;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+  });
+};
+
+// Delete downloaded topic (unchanged)
+export const useDeleteDownloadedTopic = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (topicId: number) => {
+      await db.downloadedTopics.delete(topicId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['topics'] });
+    },
+  });
+};
+
+
+// ==================== UPDATED PREMIUM SETUP: src/pages/PremiumSetup.tsx ====================
+
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Card,
+  CardContent,
+  TextField,
+  Button,
+  Typography,
+  Alert,
+  CircularProgress,
+  Container,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+} from '@mui/material';
+import { LockOpen, PersonAdd, School } from '@mui/icons-material';
+import { apiClient } from '../api/client';
+import { dbHelpers } from '../db/schema';
+import { useAllDepartments } from '../hooks/useDepartments';
+import type { PremiumAuthResponse, PremiumProfile } from '../types';
+
+export const PremiumSetup = () => {
+  const navigate = useNavigate();
+  const { data: departments, isLoading: loadingDepartments } = useAllDepartments();
+  
+  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [departmentId, setDepartmentId] = useState<number | ''>('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      // Validate input
+      if (!name.trim() || !code.trim()) {
+        setError('Please enter both name and code');
+        setLoading(false);
+        return;
+      }
+
+      if (code.length !== 4) {
+        setError('Code must be exactly 4 characters');
+        setLoading(false);
+        return;
+      }
+
+      if (!/^[A-Z0-9]{4}$/i.test(code)) {
+        setError('Code must be alphanumeric (A-Z, 0-9)');
+        setLoading(false);
+        return;
+      }
+
+      if (!departmentId) {
+        setError('Please select a department');
+        setLoading(false);
+        return;
+      }
+
+      // Call API
+      const response = await apiClient.post<PremiumAuthResponse>(
+        'premium/api/register-or-login/',
+        {
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          department_id: departmentId,
+        }
+      );
+
+      const data = response.data;
+
+      // Save profile locally with department info
+      const profile: PremiumProfile = {
+        user_id: data.user_id,
+        name: data.name,
+        code: data.code,
+        department_id: data.department_id,
+        department_name: data.department_name,
+        registered_at: Date.now(),
+      };
+
+      await dbHelpers.savePremiumProfile(profile);
+
+      // Navigate to departments
+      navigate('/');
+    } catch (err: any) {
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else {
+        setError('Failed to connect. Please check your internet connection.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSkip = () => {
+    navigate('/');
+  };
+
+  const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase().slice(0, 4);
+    setCode(value);
+  };
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        py: 4,
+      }}
+    >
+      <Container maxWidth="sm">
+        <Card
+          sx={{
+            borderRadius: 4,
+            boxShadow: '0 20px 60px rgba(102, 126, 234, 0.3)',
+          }}
+        >
+          <CardContent sx={{ p: 4 }}>
+            {/* Header */}
+            <Box textAlign="center" mb={4}>
+              <Box
+                sx={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: 4,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px',
+                  boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
+                }}
+              >
+                <PersonAdd sx={{ fontSize: 40, color: 'white' }} />
+              </Box>
+              <Typography variant="h4" fontWeight={700} color="primary" mb={1}>
+                Welcome to Study Companion
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Enter your details to access premium content
+              </Typography>
+            </Box>
+
+            {/* Error Alert */}
+            {error && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+                {error}
+              </Alert>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSubmit}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {/* Name Input */}
+                <TextField
+                  label="Full Name"
+                  variant="outlined"
+                  fullWidth
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Emmanuel Cooper"
+                  disabled={loading}
+                  inputProps={{ maxLength: 100 }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                    },
+                  }}
+                />
+
+                {/* Code Input */}
+                <TextField
+                  label="Personal Code"
+                  variant="outlined"
+                  fullWidth
+                  value={code}
+                  onChange={handleCodeChange}
+                  placeholder="e.g., EC21"
+                  disabled={loading}
+                  inputProps={{
+                    maxLength: 4,
+                    style: { textTransform: 'uppercase', fontFamily: 'monospace', fontSize: '1.2rem' },
+                  }}
+                  helperText="Exactly 4 alphanumeric characters (A-Z, 0-9)"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                    },
+                  }}
+                />
+
+                {/* NEW: Department Dropdown */}
+                <FormControl fullWidth disabled={loading || loadingDepartments}>
+                  <InputLabel>Department *</InputLabel>
+                  <Select
+                    value={departmentId}
+                    label="Department *"
+                    onChange={(e) => setDepartmentId(e.target.value as number)}
+                    sx={{ borderRadius: 2 }}
+                    startAdornment={<School sx={{ ml: 1, mr: 0.5, color: 'action.active' }} />}
+                  >
+                    <MenuItem value="">
+                      <em>-- Select Your Department --</em>
+                    </MenuItem>
+                    {departments?.map((dept) => (
+                      <MenuItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                {/* Submit Button */}
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  disabled={loading || !name.trim() || code.length !== 4 || !departmentId}
+                  startIcon={loading ? <CircularProgress size={20} /> : <LockOpen />}
+                  sx={{
+                    py: 1.5,
+                    borderRadius: 2,
+                    fontSize: '1rem',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                  }}
+                >
+                  {loading ? 'Verifying...' : 'Continue'}
+                </Button>
+
+                {/* Skip Button */}
+                <Button
+                  variant="text"
+                  fullWidth
+                  onClick={handleSkip}
+                  disabled={loading}
+                  sx={{
+                    py: 1.5,
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600,
+                  }}
+                >
+                  Skip for now
+                </Button>
+              </Box>
+            </form>
+
+            {/* Info Box */}
+            <Box
+              sx={{
+                mt: 4,
+                p: 3,
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
+                border: '2px solid',
+                borderColor: 'primary.light',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" mb={1}>
+                <strong>💡 Why choose a department?</strong>
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                Your department determines which courses and topics you can access. You'll only see content relevant to your field of study.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Don't have a code?</strong> Skip and browse community content, or contact your instructor.
+              </Typography>
+            </Box>
+
+            {/* Footer */}
+            <Box textAlign="center" mt={3}>
+              <Typography variant="caption" color="text.secondary">
+                Your data is stored locally and synced when online.
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
+      </Container>
+    </Box>
+  );
+};
+
+
+// ==================== UPDATED DEPARTMENT SELECT: src/pages/DepartmentSelect.tsx ====================
+
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Layout } from '../components/Layout';
+import { useUserDepartment } from '../hooks/useDepartments';
+import { dbHelpers } from '../db/schema';
+import {
+  Box,
+  Typography,
+  CircularProgress,
+  Container,
+  Card,
+  CardContent,
+  Button,
+} from '@mui/material';
+import { School, ArrowForward } from '@mui/icons-material';
+
+export const DepartmentSelect = () => {
+  const navigate = useNavigate();
+  const [userId, setUserId] = useState<number | null>(null);
+
+  // Load user ID from IndexedDB
+  useEffect(() => {
+    const loadProfile = async () => {
+      const profile = await dbHelpers.getPremiumProfile();
+      if (!profile) {
+        navigate('/setup');
+        return;
+      }
+      setUserId(profile.user_id);
+    };
+    loadProfile();
+  }, [navigate]);
+
+  const { data: userDept, isLoading, error } = useUserDepartment(userId);
+
+  // Auto-navigate if user has department
+  useEffect(() => {
+    if (userDept?.department) {
+      // User has department, go directly to courses
+      navigate('/courses');
+    }
+  }, [userDept, navigate]);
+
+  if (isLoading || !userId) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+        }}
+      >
+        <CircularProgress size={60} />
+        <Typography variant="h6">Loading your department...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout title="Study Companion" showSettings>
+        <Container maxWidth="sm" sx={{ mt: 4 }}>
+          <Card sx={{ borderRadius: 3 }}>
+            <CardContent sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="h6" color="error" mb={2}>
+                ⚠️ No Department Assigned
+              </Typography>
+              <Typography color="text.secondary" mb={3}>
+                Please contact your administrator to assign you to a department.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/settings')}
+              >
+                Go to Settings
+              </Button>
+            </CardContent>
+          </Card>
+        </Container>
+      </Layout>
+    );
+  }
+
+  // Show department card
+  return (
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Hero Section */}
+      <Box className="hero-section">
+        <img
+          src="/pwa-192x192.png"
+          alt="Study Companion Logo"
+          className="hero-logo"
+        />
+        <h1 className="hero-title">Study Companion</h1>
+        <p className="hero-subtitle">
+          Your department-focused study companion
+        </p>
+      </Box>
+
+      {/* Department Card */}
+      <Container maxWidth="md" sx={{ flex: 1, py: 4 }}>
+        <Card
+          sx={{
+            borderRadius: 4,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            cursor: 'pointer',
+            transition: 'transform 0.2s',
+            '&:hover': {
+              transform: 'translateY(-4px)',
+            },
+          }}
+          onClick={() => navigate('/courses')}
+        >
+          <CardContent sx={{ p: 4 }}>
+            <Box display="flex" alignItems="center" justifyContent="space-between">
+              <Box display="flex" alignItems="center" gap={2}>
+                <Box
+                  sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 3,
+                    bgcolor: 'rgba(255,255,255,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <School sx={{ fontSize: 32 }} />
+                </Box>
+                <Box>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    Your Department
+                  </Typography>
+                  <Typography variant="h4" fontWeight={700}>
+                    {userDept?.department.name}
+                  </Typography>
+                </Box>
+              </Box>
+              <ArrowForward sx={{ fontSize: 32 }} />
+            </Box>
+            
+            <Typography variant="body2" sx={{ mt: 3, opacity: 0.9 }}>
+              Click to view courses and topics available in your department
+            </Typography>
+          </CardContent>
+        </Card>
+
+        {/* Info Box */}
+        <Box
+          sx={{
+            mt: 3,
+            p: 3,
+            borderRadius: 3,
+            bgcolor: 'rgba(255,255,255,0.1)',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <Typography variant="body2" color="white">
+            💡 <strong>Department-Based Access:</strong> You can only see courses and topics from {userDept?.department.name}. 
+            To change departments, contact your administrator.
+          </Typography>
+        </Box>
+      </Container>
+
+      {/* Footer */}
+      <footer className="app-footer">
+        <div className="footer-content">
+          <img
+            src="/pwa-192x192.png"
+            alt="Study Companion"
+            className="footer-logo"
+          />
+          <h3 className="footer-title">Study Companion</h3>
+          <p className="footer-text">
+            Department-focused offline study companion for students
+          </p>
+          <div className="footer-links">
+            <a href="/settings" className="footer-link">Settings</a>
+            <a href="/downloads" className="footer-link">My Downloads</a>
+          </div>
+          <p className="footer-copyright">
+            © {new Date().getFullYear()} Study Companion
+          </p>
+        </div>
+      </footer>
+    </Box>
+  );
+};
+
+
+// ==================== UPDATED COURSE LIST: src/pages/CourseList.tsx ====================
+
+import { useState, useEffect } from 'react';
+import { Layout } from '../components/Layout';
+import { useCourses, useAvailableYears } from '../hooks/useDepartments';
+import { useStore } from '../stores/useStore';
+import { useNavigate } from 'react-router-dom';
+import { dbHelpers } from '../db/schema';
+import {
+  Card,
+  CardContent,
+  Typography,
+  Chip,
+  Box,
+  CircularProgress,
+  Alert,
+  Stack,
+  Tabs,
+  Tab,
+  Button,
+} from '@mui/material';
+import { CalendarToday, Description, CheckCircle } from '@mui/icons-material';
+
+export const CourseList = () => {
+  const navigate = useNavigate();
+  const [departmentId, setDepartmentId] = useState<number | null>(null);
+  const selectedYear = useStore((state) => state.selectedYear);
+  const setSelectedYear = useStore((state) => state.setSelectedYear);
+
+  // Load department from profile
+  useEffect(() => {
+    const loadDepartment = async () => {
+      const profile = await dbHelpers.getPremiumProfile();
+      if (!profile) {
+        navigate('/setup');
+        return;
+      }
+      setDepartmentId(profile.department_id);
+    };
+    loadDepartment();
+  }, [navigate]);
+
+  const { data: availableYears, isLoading: loadingYears } = useAvailableYears(departmentId);
+  const { data: coursesData, isLoading: loadingCourses, error } = useCourses(departmentId, selectedYear);
+
+  // Auto-select most recent year on first load
+  useEffect(() => {
+    if (availableYears && availableYears.length > 0 && !selectedYear) {
+      setSelectedYear(availableYears[0]); // Most recent year
+    }
+  }, [availableYears, selectedYear, setSelectedYear]);
+
+  const handleYearChange = (_: React.SyntheticEvent, newYear: string) => {
+    setSelectedYear(newYear);
+  };
+
+  if (!departmentId) {
+    return (
+      <Layout title="Courses" showBack showSettings>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+          <CircularProgress />
+        </Box>
+      </Layout>
+    );
+  }
+
+  if (loadingYears || loadingCourses) {
+    return (
+      <Layout title={coursesData?.department.name || 'Courses'} showBack showSettings>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+          <CircularProgress />
+        </Box>
+      </Layout>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout title="Courses" showBack showSettings>
+        <Alert severity="error">Failed to load courses. Please check your connection.</Alert>
+      </Layout>
+    );
+  }
+
+  if (!availableYears || availableYears.length === 0) {
+    return (
+      <Layout title={coursesData?.department.name || 'Courses'} showBack showSettings>
+        <Box textAlign="center" py={8}>
+          <Typography variant="h6" color="text.secondary" mb={2}>
+            No academic years available yet
+          </Typography>
+          <Button variant="contained" onClick={() => navigate('/')}>
+            Go Back
+          </Button>
+        </Box>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout title={coursesData?.department.name || 'Courses'} showBack showSettings>
+      {/* Academic Year Tabs */}
+      <Box sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs
+          value={selectedYear || availableYears[0]}
+          onChange={handleYearChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{
+            '& .MuiTab-root': {
+              minWidth: 120,
+              fontWeight: 600,
+            },
+          }}
+        >
+          {availableYears.map((year) => (
+            <Tab
+              key={year}
+              label={year}
+              value={year}
+              icon={<CalendarToday fontSize="small" />}
+              iconPosition="start"
+            />
+          ))}
+        </Tabs>
+      </Box>
+
+      {/* Year Info */}
+      <Alert severity="info" sx={{ mb: 3 }}>
+        Showing courses for <strong>{selectedYear || availableYears[0]}</strong> academic year
+      </Alert>
+
+      {/* Courses List */}
+      {!coursesData?.courses || coursesData.courses.length === 0 ? (
+        <Box textAlign="center" py={8}>
+          <Typography variant="h6" color="text.secondary" mb={2}>
+            No courses yet for {selectedYear}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Try selecting a different academic year
+          </Typography>
+        </Box>
+      ) : (
+        <Stack spacing={2}>
+          {coursesData.courses.map((course) => (
+            <Card
+              key={course.id}
+              onClick={() => navigate(`/courses/${course.id}/topics`)}
+              sx={{ cursor: 'pointer' }}
+            >
+              <CardContent>
+                <Typography variant="h6" fontWeight={600} mb={1}>
+                  {course.name}
+                </Typography>
+
+                {/* Year Badge */}
+                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                  <CalendarToday fontSize="small" color="action" />
+                  <Typography variant="body2" color="text.secondary">
+                    {course.year}
+                  </Typography>
+                </Box>
+
+                {/* Stats */}
+                <Box display="flex" gap={2}>
+                  <Chip
+                    icon={<Description />}
+                    label={`${course.topic_count} topics`}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                  />
+                  <Chip
+                    icon={<CheckCircle />}
+                    label={`${course.refined_count} refined`}
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                  />
+                </Box>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
+      )}
+    </Layout>
+  );
+};
+
+
+// ==================== UPDATED SETTINGS: src/pages/Settings.tsx ====================
+
+import { useState, useEffect } from 'react';
+import { Layout } from '../components/Layout';
+import { useStore } from '../stores/useStore';
+import { db, dbHelpers } from '../db/schema';
+import type { PremiumProfile } from '../types';
+import { useNavigate } from 'react-router-dom';
+
+import {
+  Box,
+  Card,
+  CardContent,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  Divider,
+  Typography,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  Chip,
+} from '@mui/material';
+
+import {
+  Apartment as DepartmentIcon,
+  Storage,
+  Info,
+  DeleteForever,
+  Person,
+  Logout,
+  School,
+} from '@mui/icons-material';
+
+export const Settings = () => {
+  const navigate = useNavigate();
+  const clearSelectedDepartment = useStore((state) => state.clearSelectedDepartment);
+
+  // Offline stats
+  const [storageSize, setStorageSize] = useState('0 KB');
+  const [offlineCount, setOfflineCount] = useState(0);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+
+  // Premium profile
+  const [profile, setProfile] = useState<PremiumProfile | null>(null);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+
+  useEffect(() => {
+    loadStats();
+    loadProfile();
+  }, []);
+
+  const loadStats = async () => {
+    const size = await dbHelpers.getStorageSize();
+    setStorageSize(`${(size / 1024).toFixed(2)} KB`);
+
+    const count = await db.downloadedTopics.count();
+    setOfflineCount(count);
+  };
+
+  const loadProfile = async () => {
+    const p = await dbHelpers.getPremiumProfile();
+    setProfile(p || null);
+  };
+
+  const handleChangeDepartment = () => {
+    clearSelectedDepartment();
+    navigate('/');
+  };
+
+  const handleClearAll = async () => {
+    await dbHelpers.clearAll();
+    setClearDialogOpen(false);
+    loadStats();
+    alert('All offline data cleared!');
+  };
+
+  const handleLogout = async () => {
+    await dbHelpers.clearPremiumProfile();
+    setLogoutDialogOpen(false);
+    window.location.href = '/setup';
+  };
+
+  return (
+    <Layout title="Settings" showBack>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+        {/* ================= PREMIUM ACCOUNT ================= */}
+        <Card sx={{ borderRadius: 3 }}>
+          <CardContent>
+            <Box display="flex" alignItems="center" gap={2} mb={2}>
+              <Person color="primary" />
+              <Typography variant="h6" fontWeight={600}>
+                Premium Account
+              </Typography>
+            </Box>
+
+            {profile ? (
+              <>
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2,
+                    background:
+                      'linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1))',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary">
+                    Name
+                  </Typography>
+                  <Typography fontWeight={600}>{profile.name}</Typography>
+
+                  <Typography variant="body2" color="text.secondary" mt={2}>
+                    Personal Code
+                  </Typography>
+                  <Typography
+                    fontWeight={700}
+                    sx={{ fontFamily: 'monospace', color: 'primary.main' }}
+                  >
+                    {profile.code}
+                  </Typography>
+
+                  {/* NEW: Department Display */}
+                  <Typography variant="body2" color="text.secondary" mt={2}>
+                    Department
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                    <School fontSize="small" color="secondary" />
+                    <Chip
+                      label={profile.department_name}
+                      size="small"
+                      color="secondary"
+                      variant="outlined"
+                    />
+                  </Box>
+
+                  <Typography variant="caption" color="text.secondary" mt={2} display="block">
+                    Registered: {new Date(profile.registered_at).toLocaleDateString()}
+                  </Typography>
+                </Box>
+
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  color="error"
+                  startIcon={<Logout />}
+                  onClick={() => setLogoutDialogOpen(true)}
+                  sx={{ borderRadius: 2, py: 1.5, fontWeight: 600 }}
+                >
+                  Log Out
+                </Button>
+              </>
+            ) : (
+              <Alert severity="info">
+                You are browsing as a guest. Set up premium to unlock exclusive topics.
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ================= GENERAL SETTINGS ================= */}
+        <Card sx={{ borderRadius: 3 }}>
+          <List disablePadding>
+            <ListItemButton onClick={handleChangeDepartment}>
+              <DepartmentIcon sx={{ mr: 2, color: 'primary.main' }} />
+              <ListItemText
+                primary="View Department"
+                secondary="Go to your department page"
+              />
+            </ListItemButton>
+
+            <Divider />
+
+            <ListItemButton onClick={() => navigate('/downloads')}>
+              <Storage sx={{ mr: 2, color: 'primary.main' }} />
+              <ListItemText
+                primary="My Downloads"
+                secondary={`${offlineCount} topics • ${storageSize}`}
+              />
+            </ListItemButton>
+
+            <Divider />
+
+            <ListItemButton onClick={() => setClearDialogOpen(true)}>
+              <DeleteForever sx={{ mr: 2, color: 'error.main' }} />
+              <ListItemText
+                primary="Clear Offline Data"
+                secondary="Remove all downloaded topics"
+              />
+            </ListItemButton>
+
+            <Divider />
+
+            <ListItem>
+              <Info sx={{ mr: 2, color: 'text.secondary' }} />
+              <ListItemText
+                primary="About"
+                secondary="Study Companion v3.1.0 - Phase 5"
+              />
+            </ListItem>
+          </List>
+        </Card>
+
+        <Alert severity="info">
+          This app works offline. Download topics to study without internet access.
+        </Alert>
+      </Box>
+
+      {/* ================= CLEAR DATA DIALOG ================= */}
+      <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)}>
+        <DialogTitle>Clear Offline Data?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            This will remove all downloaded topics. You can re-download them later.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearDialogOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleClearAll}>
+            Clear All
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ================= LOGOUT DIALOG ================= */}
+      <Dialog open={logoutDialogOpen} onClose={() => setLogoutDialogOpen(false)}>
+        <DialogTitle>Log Out?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            You will need your name and code to access premium content again.
+          </Typography>
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            Offline downloads will remain available.
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLogoutDialogOpen(false)}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleLogout}>
+            Log Out
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Layout>
+  );
+};

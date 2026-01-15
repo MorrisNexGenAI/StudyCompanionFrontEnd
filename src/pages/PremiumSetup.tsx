@@ -1,3 +1,6 @@
+
+// ==================== UPDATED PREMIUM SETUP: src/pages/PremiumSetup.tsx ====================
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -10,16 +13,24 @@ import {
   Alert,
   CircularProgress,
   Container,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
-import { LockOpen, PersonAdd } from '@mui/icons-material';
+import { LockOpen, PersonAdd, School } from '@mui/icons-material';
 import { apiClient } from '../api/client';
 import { dbHelpers } from '../db/schema';
+import { useAllDepartments } from '../hooks/useDepartments';
 import type { PremiumAuthResponse, PremiumProfile } from '../types';
 
 export const PremiumSetup = () => {
   const navigate = useNavigate();
+  const { data: departments, isLoading: loadingDepartments } = useAllDepartments();
+  
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
+  const [departmentId, setDepartmentId] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,22 +59,31 @@ export const PremiumSetup = () => {
         return;
       }
 
+      if (!departmentId) {
+        setError('Please select a department');
+        setLoading(false);
+        return;
+      }
+
       // Call API
       const response = await apiClient.post<PremiumAuthResponse>(
         'premium/api/register-or-login/',
         {
           name: name.trim(),
           code: code.trim().toUpperCase(),
+          department_id: departmentId,
         }
       );
 
       const data = response.data;
 
-      // Save profile locally
+      // Save profile locally with department info
       const profile: PremiumProfile = {
         user_id: data.user_id,
         name: data.name,
         code: data.code,
+        department_id: data.department_id,
+        department_name: data.department_name,
         registered_at: Date.now(),
       };
 
@@ -87,7 +107,6 @@ export const PremiumSetup = () => {
   };
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Auto-uppercase and limit to 4 chars
     const value = e.target.value.toUpperCase().slice(0, 4);
     setCode(value);
   };
@@ -131,7 +150,7 @@ export const PremiumSetup = () => {
                 Welcome to Study Companion
               </Typography>
               <Typography variant="body1" color="text.secondary">
-                Enter your name and 4-character code to access premium content
+                Enter your details to access premium content
               </Typography>
             </Box>
 
@@ -183,13 +202,34 @@ export const PremiumSetup = () => {
                   }}
                 />
 
+                {/* NEW: Department Dropdown */}
+                <FormControl fullWidth disabled={loading || loadingDepartments}>
+                  <InputLabel>Department *</InputLabel>
+                  <Select
+                    value={departmentId}
+                    label="Department *"
+                    onChange={(e) => setDepartmentId(e.target.value as number)}
+                    sx={{ borderRadius: 2 }}
+                    startAdornment={<School sx={{ ml: 1, mr: 0.5, color: 'action.active' }} />}
+                  >
+                    <MenuItem value="">
+                      <em>-- Select Your Department --</em>
+                    </MenuItem>
+                    {departments?.map((dept) => (
+                      <MenuItem key={dept.id} value={dept.id}>
+                        {dept.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
                 {/* Submit Button */}
                 <Button
                   type="submit"
                   variant="contained"
                   size="large"
                   fullWidth
-                  disabled={loading || !name.trim() || code.length !== 4}
+                  disabled={loading || !name.trim() || code.length !== 4 || !departmentId}
                   startIcon={loading ? <CircularProgress size={20} /> : <LockOpen />}
                   sx={{
                     py: 1.5,
@@ -232,13 +272,13 @@ export const PremiumSetup = () => {
               }}
             >
               <Typography variant="body2" color="text.secondary" mb={1}>
-                <strong>💡 What is this?</strong>
+                <strong>💡 Why choose a department?</strong>
               </Typography>
               <Typography variant="body2" color="text.secondary" mb={2}>
-                Premium content is restricted to specific users. Enter your name and code to access exclusive study materials.
+                Your department determines which courses and topics you can access. You'll only see content relevant to your field of study.
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                <strong>Don't have a code?</strong> You can skip this step and browse community content, or contact your instructor for a code.
+                <strong>Don't have a code?</strong> Skip and browse community content, or contact your instructor.
               </Typography>
             </Box>
 
