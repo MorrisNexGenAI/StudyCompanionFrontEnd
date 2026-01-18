@@ -10,7 +10,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'pwa-192x192.png', 'pwa-512x512.png'],
       devOptions: {
-        enabled: true, // Enable PWA in development
+        enabled: true,
       },
       manifest: {
         name: 'Study Companion',
@@ -47,8 +47,9 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          // UPDATED: Local server first, then network, then cache
           {
-            urlPattern: /^https:\/\/.*\/api\/.*/i,
+            urlPattern: /^https?:\/\/.*\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
@@ -59,7 +60,9 @@ export default defineConfig({
               cacheableResponse: {
                 statuses: [0, 200]
               },
-              networkTimeoutSeconds: 10
+              networkTimeoutSeconds: 10,
+              // Note: Local server detection is handled in client.ts
+              // Service worker uses standard NetworkFirst strategy
             }
           }
         ]
